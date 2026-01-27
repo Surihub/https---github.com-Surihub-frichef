@@ -40,7 +40,7 @@ const RecipeResult = ({
               </div>
               <div className="text-center space-y-2">
                 <p className="text-lg font-black text-slate-800">레시피 분석 중...</p>
-                <p className="text-xs font-medium text-slate-400">재료 조합을 계산하고 있습니다</p>
+                <p className="text-xs font-medium text-slate-400">재료 조합을 계산하고 있습니다.</p>
               </div>
             </div>
           ) : result && 'error' in result ? (

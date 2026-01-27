@@ -56,6 +56,21 @@ const App = () => {
     }
     return [];
   });
+  const [feedbacks, setFeedbacks] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('frichef_feedbacks');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to parse feedbacks', e);
+        }
+      }
+    }
+    return [];
+  });
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackComment, setFeedbackComment] = useState('');
 
   const [tools, setTools] = useState(() => {
     let savedSelection = {};
@@ -105,6 +120,10 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('frichef_recipes', JSON.stringify(savedRecipes));
   }, [savedRecipes]);
+
+  useEffect(() => {
+    localStorage.setItem('frichef_feedbacks', JSON.stringify(feedbacks));
+  }, [feedbacks]);
 
   useEffect(() => {
     const selectionMap = tools.reduce((acc, tool) => ({
@@ -242,8 +261,11 @@ const App = () => {
     setIngredients(prev => prev.map(item => ({ ...item, selected: false })));
   };
 
+  const handleSelectAllIngredients = () => {
+    setIngredients(prev => prev.map(item => ({ ...item, selected: true })));
+  };
 
-  const handleDeleteSavedRecipe = (id) => {
+  const handleDeleteSavedRecipe = id => {
     setSavedRecipes(prev => prev.filter(recipe => recipe.id !== id));
   };
   const handleGenerateRecipe = async () => {
@@ -296,6 +318,27 @@ const App = () => {
     alert('레시피가 저장되었습니다.');
   };
 
+  const handleSubmitFeedback = () => {
+    if (!feedbackComment.trim()) {
+      alert('피드백 내용을 입력해주세요.');
+      return;
+    }
+
+    const feedbackEntry = {
+      id: Date.now(),
+      rating: feedbackRating,
+      comment: feedbackComment.trim(),
+      createdAt: new Date().toLocaleString('ko-KR'),
+    };
+
+    setFeedbacks(prev => [feedbackEntry, ...prev]);
+    setFeedbackComment('');
+  };
+
+  const handleDeleteFeedback = id => {
+    setFeedbacks(prev => prev.filter(entry => entry.id !== id));
+  };
+
   const handleLogin = async () => {
     try {
       setAuthError(null);
@@ -326,8 +369,7 @@ const App = () => {
 
   const renderSavedSection = () => (
     <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
-      <div className="flex items-center gap-2 px-1">
-        <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">4</div>
+      <div className="flex items-center justify-between px-1">
         <h2 className="font-bold text-slate-700 text-sm">저장된 레시피</h2>
         {remoteSyncError && (
           <span className="text-[10px] text-rose-500 font-semibold">Firebase 동기화 실패</span>
@@ -395,6 +437,7 @@ const App = () => {
             listStepNumber="2"
             listTitle="재료 선택"
             onClearSelections={handleClearAllSelections}
+            onSelectAll={handleSelectAllIngredients}
           />
         );
       case 'tools':
@@ -457,6 +500,60 @@ const App = () => {
       case 'info':
         return (
           <div className="space-y-4">
+            <section className="bg-white border border-slate-100 rounded-3xl p-6 space-y-3 shadow-sm">
+              <h2 className="text-xl font-black text-slate-800">frichef에 대하여</h2>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                frichef는 냉장고 속 재료와 사용할 수 있는 조리도구만으로도 집에서 손쉽게 요리를 즐길 수 있도록 도와주는 AI 셰프 앱입니다.
+                Google Gemini와 연동되어 한국어 레시피를 빠르게 추천하며, 필요한 재료와 도구를 단계별로 안내합니다.
+              </p>
+              <p className="text-sm font-bold text-slate-600">제작자 : 황수빈</p>
+            </section>
+
+            <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-black text-slate-800">사용자 피드백</h3>
+                <span className="text-xs text-slate-400">별점을 선택하고 의견을 남겨주세요</span>
+              </div>
+              <div className="flex justify-center gap-2">
+                {[1, 2, 3, 4, 5].map(value => (
+                  <button
+                    key={value}
+                    onClick={() => setFeedbackRating(value)}
+                    className={`w-10 h-10 rounded-full border font-bold ${feedbackRating === value ? 'bg-amber-400 text-white border-amber-400' : 'bg-white text-slate-500 border-slate-200'}`}
+                  >
+                    {value}★
+                  </button>
+                ))}
+              </div>
+              <textarea
+                className="w-full border border-slate-200 rounded-2xl p-3 text-sm resize-none focus:ring-1 focus:ring-amber-400"
+                rows={3}
+                placeholder="주관식 피드백을 남겨주세요"
+                value={feedbackComment}
+                onChange={e => setFeedbackComment(e.target.value)}
+              />
+              <button
+                onClick={handleSubmitFeedback}
+                className="w-full bg-slate-900 text-white py-3 rounded-2xl font-bold"
+              >
+                피드백 제출
+              </button>
+              {feedbacks.length > 0 && (
+                <div className="space-y-3">
+                  {feedbacks.map(entry => (
+                    <div key={entry.id} className="border border-slate-100 rounded-2xl p-3">
+                      <div className="flex justify-between text-xs text-slate-400">
+                        <span>{entry.createdAt}</span>
+                        <button onClick={() => handleDeleteFeedback(entry.id)} className="text-rose-500">삭제</button>
+                      </div>
+                      <p className="text-sm font-bold text-amber-500">{'★'.repeat(entry.rating)}</p>
+                      <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{entry.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <section className="bg-white border border-slate-100 rounded-3xl p-6 space-y-3 shadow-sm text-center">
               <h2 className="text-xl font-black text-slate-800">{displayName}님 환영합니다!</h2>
               <p className="text-sm text-slate-500">계정 정보를 안전하게 동기화하고 있습니다.</p>
@@ -467,6 +564,7 @@ const App = () => {
                 로그아웃
               </button>
             </section>
+
             {renderSavedSection()}
           </div>
         );

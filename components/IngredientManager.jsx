@@ -10,6 +10,7 @@ const IngredientManager = ({
   syncError,
   syncLoading,
   onClearSelections,
+  onSelectAll,
   showAddSection = true,
   showListSection = true,
   addStepNumber = '1',
@@ -138,16 +139,24 @@ const IngredientManager = ({
       <div className="space-y-3 pb-24">
         <div className="flex justify-between items-end px-1">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">{listStepNumber}</div>
-            <h2 className="font-bold text-slate-700 text-sm">{listTitle}</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-              {ingredients.length} ITEMS
-            </span>
-            {onClearSelections && (
-              <button
-                onClick={onClearSelections}
+          <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">{listStepNumber}</div>
+          <h2 className="font-bold text-slate-700 text-sm">{listTitle}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+            {ingredients.length} ITEMS
+          </span>
+          {onSelectAll && (
+            <button
+              onClick={onSelectAll}
+              className="text-[10px] text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full"
+            >
+              전체 선택
+            </button>
+          )}
+          {onClearSelections && (
+            <button
+              onClick={onClearSelections}
                 className="text-[10px] text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full"
               >
                 전체 해제

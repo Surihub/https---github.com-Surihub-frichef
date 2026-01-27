@@ -1,0 +1,5 @@
+{
+  "name": "frichef",
+  "description": "frichef는 냉장고 속 재료와 사용 가능한 도구를 기반으로 Google Gemini가 한국어 레시피를 제안하는 모바일 퍼스트 AI 셰프입니다.",
+  "requestFramePermissions": []
+}

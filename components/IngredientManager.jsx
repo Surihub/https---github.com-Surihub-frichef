@@ -9,6 +9,13 @@ const IngredientManager = ({
   onUpdate,
   syncError,
   syncLoading,
+  onClearSelections,
+  showAddSection = true,
+  showListSection = true,
+  addStepNumber = '1',
+  addTitle = '재료 추가',
+  listStepNumber = '2',
+  listTitle = '냉장고 목록',
 }) => {
   const [newName, setNewName] = useState('');
   const [newDate, setNewDate] = useState('');
@@ -79,10 +86,11 @@ const IngredientManager = ({
   return (
     <div className="space-y-6">
       {/* Input Section */}
+      {showAddSection && (
       <div className="space-y-3">
         <div className="flex items-center gap-2 px-1">
-          <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">2</div>
-          <h2 className="font-bold text-slate-700 text-sm">재료 추가</h2>
+          <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">{addStepNumber}</div>
+          <h2 className="font-bold text-slate-700 text-sm">{addTitle}</h2>
         </div>
         {syncLoading && (
           <p className="text-[11px] text-slate-400 px-1">Firebase에서 재료를 불러오는 중이에요...</p>
@@ -123,17 +131,29 @@ const IngredientManager = ({
             <p className="text-[11px] text-slate-400 px-1">유통기한이 없다면 비워두고 추가해도 됩니다.</p>
         </form>
       </div>
+      )}
 
       {/* List Section */}
+      {showListSection && (
       <div className="space-y-3 pb-24">
         <div className="flex justify-between items-end px-1">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">3</div>
-            <h2 className="font-bold text-slate-700 text-sm">냉장고 목록</h2>
+            <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">{listStepNumber}</div>
+            <h2 className="font-bold text-slate-700 text-sm">{listTitle}</h2>
           </div>
-          <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-            {ingredients.length} ITEMS
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+              {ingredients.length} ITEMS
+            </span>
+            {onClearSelections && (
+              <button
+                onClick={onClearSelections}
+                className="text-[10px] text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full"
+              >
+                전체 해제
+              </button>
+            )}
+          </div>
         </div>
         <p className="text-[11px] text-slate-500 px-1">재료 카드를 누르면 유통기한을 수정할 수 있어요.</p>
 
@@ -203,6 +223,7 @@ const IngredientManager = ({
           )}
         </div>
       </div>
+      )}
 
       {editingIngredient && (
         <div className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm space-y-3">

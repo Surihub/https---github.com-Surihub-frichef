@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban } from 'lucide-react';
+import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban, ClipboardList, Plus } from 'lucide-react';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import ToolBar from './components/ToolBar';
@@ -15,8 +15,6 @@ const getDefaultIngredients = () => ([
 ]);
 
 const App = () => {
-  // --- Static Definitions ---
-  // Icons cannot be saved to localStorage, so we define the base structure here
   const TOOL_DEFINITIONS = [
     { id: 'no-tools', name: '조리도구 없이', icon: <Ban className="w-5 h-5" /> },
     { id: 'pan', name: '프라이팬', icon: <Flame className="w-5 h-5" /> },
@@ -31,9 +29,6 @@ const App = () => {
   const [authError, setAuthError] = useState(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  // --- State with Persistence ---
-  
-  // 1. Ingredients
   const [ingredients, setIngredients] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('fridge_ingredients');
@@ -41,12 +36,13 @@ const App = () => {
         try {
           return JSON.parse(saved);
         } catch (e) {
-          console.error("Failed to parse ingredients", e);
+          console.error('Failed to parse ingredients', e);
         }
       }
     }
     return getDefaultIngredients();
   });
+
   const [savedRecipes, setSavedRecipes] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('frichef_recipes');
@@ -61,7 +57,6 @@ const App = () => {
     return [];
   });
 
-  // 2. Tools
   const [tools, setTools] = useState(() => {
     let savedSelection = {};
     if (typeof window !== 'undefined') {
@@ -70,14 +65,14 @@ const App = () => {
         try {
           savedSelection = JSON.parse(saved);
         } catch (e) {
-          console.error("Failed to parse tools", e);
+          console.error('Failed to parse tools', e);
         }
       }
     }
 
     return TOOL_DEFINITIONS.map(def => ({
       ...def,
-      selected: savedSelection[def.id] ?? (def.id === 'no-tools')
+      selected: savedSelection[def.id] ?? (def.id === 'no-tools'),
     }));
   });
 
@@ -89,9 +84,10 @@ const App = () => {
   const [remoteSyncError, setRemoteSyncError] = useState(null);
   const [lastSelectedIngredients, setLastSelectedIngredients] = useState([]);
   const [lastSelectedTools, setLastSelectedTools] = useState([]);
+  const [activeTab, setActiveTab] = useState('add');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, currentUser => {
       setUser(currentUser);
       setIsAuthInitialized(true);
       if (currentUser) {
@@ -102,7 +98,6 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // --- Persistence Effects ---
   useEffect(() => {
     localStorage.setItem('fridge_ingredients', JSON.stringify(ingredients));
   }, [ingredients]);
@@ -112,10 +107,9 @@ const App = () => {
   }, [savedRecipes]);
 
   useEffect(() => {
-    // Only save the selection state (id -> boolean map) to avoid circular refs/icon issues
     const selectionMap = tools.reduce((acc, tool) => ({
       ...acc,
-      [tool.id]: tool.selected
+      [tool.id]: tool.selected,
     }), {});
     localStorage.setItem('fridge_tools', JSON.stringify(selectionMap));
   }, [tools]);
@@ -129,7 +123,7 @@ const App = () => {
     }
 
     let isActive = true;
-    const loadIngredients = async () => {
+    const loadRemoteData = async () => {
       setIsRemoteDataLoading(true);
       try {
         const docRef = doc(db, 'users', user.uid);
@@ -151,7 +145,7 @@ const App = () => {
         setRemoteSyncError(null);
       } catch (error) {
         if (isActive) {
-          console.error('Failed to load ingredients from Firebase', error);
+          console.error('Failed to load data from Firebase', error);
           setRemoteSyncError('Firebase 동기화에 실패했습니다. 로컬 데이터만 사용합니다.');
           setHasLoadedRemoteData(true);
         }
@@ -162,7 +156,7 @@ const App = () => {
       }
     };
 
-    loadIngredients();
+    loadRemoteData();
 
     return () => {
       isActive = false;
@@ -201,8 +195,7 @@ const App = () => {
     syncRecipes();
   }, [user, savedRecipes, hasLoadedRemoteData, remoteSyncError]);
 
-  // --- Handlers ---
-  const handleToggleTool = (id) => {
+  const handleToggleTool = id => {
     setTools(prev => {
       const target = prev.find(tool => tool.id === id);
       const nextSelected = target ? !target.selected : true;
@@ -213,11 +206,7 @@ const App = () => {
         }
 
         if (nextSelected) {
-          if (id === 'no-tools') {
-            return { ...tool, selected: false };
-          }
-
-          if (tool.id === 'no-tools') {
+          if (id === 'no-tools' || tool.id === 'no-tools') {
             return { ...tool, selected: false };
           }
         }
@@ -237,20 +226,26 @@ const App = () => {
     ]);
   };
 
-  const handleToggleIngredient = (id) => {
-    setIngredients(prev => prev.map(i => i.id === id ? { ...i, selected: !i.selected } : i));
+  const handleToggleIngredient = id => {
+    setIngredients(prev => prev.map(item => (item.id === id ? { ...item, selected: !item.selected } : item)));
   };
 
-  const handleDeleteIngredient = (id) => {
-    setIngredients(prev => prev.filter(i => i.id !== id));
+  const handleDeleteIngredient = id => {
+    setIngredients(prev => prev.filter(item => item.id !== id));
   };
 
   const handleUpdateIngredientExpiry = (id, date) => {
-    setIngredients(prev => prev.map(item => (
-      item.id === id ? { ...item, expiryDate: date || '' } : item
-    )));
+    setIngredients(prev => prev.map(item => (item.id === id ? { ...item, expiryDate: date || '' } : item)));
   };
 
+  const handleClearAllSelections = () => {
+    setIngredients(prev => prev.map(item => ({ ...item, selected: false })));
+  };
+
+
+  const handleDeleteSavedRecipe = (id) => {
+    setSavedRecipes(prev => prev.filter(recipe => recipe.id !== id));
+  };
   const handleGenerateRecipe = async () => {
     const selectedIngs = ingredients.filter(i => i.selected).map(i => i.name);
     const selectedTools = tools.filter(t => t.selected).map(t => t.name);
@@ -259,10 +254,11 @@ const App = () => {
     setLastSelectedTools(selectedTools);
 
     if (selectedIngs.length === 0) {
-      alert("재료를 최소 하나 이상 선택해주세요!");
+      alert('재료를 최소 하나 이상 선택해주세요!');
       return;
     }
 
+    setActiveTab('recipe');
     setIsModalOpen(true);
     setIsLoading(true);
     setRecipeResult(null);
@@ -271,7 +267,7 @@ const App = () => {
       const result = await generateRecipe(selectedIngs, selectedTools);
       setRecipeResult(result);
     } catch (error) {
-      setRecipeResult({ error: "레시피를 생성하는 도중 문제가 발생했습니다." });
+      setRecipeResult({ error: '레시피를 생성하는 도중 문제가 발생했습니다.' });
     } finally {
       setIsLoading(false);
     }
@@ -322,8 +318,163 @@ const App = () => {
     }
   };
 
-  const selectedCount = ingredients.filter(i => i.selected).length;
+  const selectedIngredients = ingredients.filter(i => i.selected);
+  const selectedToolsList = tools.filter(t => t.selected);
+  const selectedCount = selectedIngredients.length;
   const canGenerateRecipe = selectedCount > 0 && !isLoading;
+  const displayName = user?.displayName || user?.email || '숩숩';
+
+  const renderSavedSection = () => (
+    <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
+      <div className="flex items-center gap-2 px-1">
+        <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">4</div>
+        <h2 className="font-bold text-slate-700 text-sm">저장된 레시피</h2>
+        {remoteSyncError && (
+          <span className="text-[10px] text-rose-500 font-semibold">Firebase 동기화 실패</span>
+        )}
+      </div>
+      {savedRecipes.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-6">아직 저장한 레시피가 없습니다. 마음에 드는 레시피를 저장해보세요.</p>
+      ) : (
+        <div className="space-y-3">
+          {savedRecipes.map(recipe => (
+            <div key={recipe.id} className="border border-slate-100 rounded-2xl p-4 bg-slate-50/60">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-[11px] text-slate-400">{new Date(recipe.createdAt).toLocaleString()}</p>
+                  <h3 className="font-bold text-slate-800 text-base">{recipe.dishName}</h3>
+                </div>
+                <button
+                  onClick={() => handleDeleteSavedRecipe(recipe.id)}
+                  className="text-[10px] text-rose-500 border border-rose-200 px-2 py-0.5 rounded-full"
+                >
+                  삭제
+                </button>
+              </div>
+              <p className="text-[12px] text-slate-500 mt-2">
+                재료: {recipe.ingredients && recipe.ingredients.length > 0 ? recipe.ingredients.join(', ') : '정보 없음'}
+              </p>
+              <p className="text-[12px] text-slate-500">
+                도구: {recipe.tools && recipe.tools.length > 0 ? recipe.tools.join(', ') : '조리도구 없이'}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'add':
+        return (
+          <IngredientManager
+            ingredients={ingredients}
+            onAdd={handleAddIngredient}
+            onToggle={handleToggleIngredient}
+            onDelete={handleDeleteIngredient}
+            onUpdate={handleUpdateIngredientExpiry}
+            syncError={remoteSyncError}
+            syncLoading={isRemoteDataLoading}
+            addStepNumber="1"
+            addTitle="재료 추가"
+            showListSection={false}
+          />
+        );
+      case 'select':
+        return (
+          <IngredientManager
+            ingredients={ingredients}
+            onAdd={handleAddIngredient}
+            onToggle={handleToggleIngredient}
+            onDelete={handleDeleteIngredient}
+            onUpdate={handleUpdateIngredientExpiry}
+            syncError={remoteSyncError}
+            syncLoading={isRemoteDataLoading}
+            showAddSection={false}
+            listStepNumber="2"
+            listTitle="재료 선택"
+            onClearSelections={handleClearAllSelections}
+          />
+        );
+      case 'tools':
+        return (
+          <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
+            <div className="flex items-center gap-2 px-1">
+              <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">3</div>
+              <h2 className="font-bold text-slate-700 text-sm">조리도구 선택
+</h2>
+            </div>
+            <ToolBar tools={tools} onToggle={handleToggleTool} />
+          </section>
+        );
+      case 'recipe':
+        return (
+          <>
+            <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-500">선택된 재료</p>
+                  <p className="text-lg font-black text-slate-900">{selectedCount}개</p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('select')}
+                  className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl"
+                >
+                  재료 다시 선택
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedIngredients.length === 0 ? (
+                  <span className="text-xs text-slate-400">선택된 재료가 없습니다.</span>
+                ) : (
+                  selectedIngredients.map(ing => (
+                    <span key={ing.id} className="px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-bold">{ing.name}</span>
+                  ))
+                )}
+              </div>
+              <button
+                onClick={handleGenerateRecipe}
+                disabled={!canGenerateRecipe}
+                className={`w-full py-4 rounded-2xl font-black text-white text-lg ${canGenerateRecipe ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-300 cursor-not-allowed'}`}
+              >
+                레시피 만들기
+              </button>
+            </section>
+
+            <RecipeResult
+              isOpen={isModalOpen}
+              isLoading={isLoading}
+              result={recipeResult}
+              onClose={() => setIsModalOpen(false)}
+              contextIngredients={lastSelectedIngredients}
+              contextTools={lastSelectedTools}
+              onRegenerate={handleGenerateRecipe}
+              onSave={handleSaveRecipe}
+            />
+          </>
+        );
+      case 'info':
+        return (
+          <div className="space-y-4">
+            <section className="bg-white border border-slate-100 rounded-3xl p-6 space-y-3 shadow-sm text-center">
+              <h2 className="text-xl font-black text-slate-800">{displayName}님 환영합니다!</h2>
+              <p className="text-sm text-slate-500">계정 정보를 안전하게 동기화하고 있습니다.</p>
+              <button
+                onClick={handleLogout}
+                className="mt-2 bg-slate-900 text-white px-4 py-2 rounded-2xl font-bold"
+              >
+                로그아웃
+              </button>
+            </section>
+            {renderSavedSection()}
+          </div>
+        );
+      default:
+        return renderSavedSection();
+    }
+  };
+
 
   if (!isAuthInitialized) {
     return (
@@ -373,131 +524,74 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-[#F4F6FB] pb-10 max-w-lg mx-auto shadow-2xl shadow-slate-200">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-transparent border-none p-4 transition-all">
-        <div className="flex justify-between items-center">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-[#F4F6FB]/95 backdrop-blur-md border-b border-white/60 px-4 py-3">
+        <div className="max-w-lg mx-auto flex justify-between items-center gap-3">
           <div className="flex items-center gap-2.5">
             <div className="bg-slate-900 p-2 rounded-xl shadow-lg shadow-slate-200">
               <UtensilsCrossed className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight text-slate-800">frichef</h1>
-              <p className="text-[11px] text-slate-500 font-semibold tracking-tight">냉장고 기반 AI 셰프</p>
+              <button
+                onClick={() => alert('frichef는 냉장고 재료와 도구를 기반으로 한국어 레시피를 제안하는 개인 AI 셰프입니다.')}
+                className="text-[11px] text-slate-500 font-semibold tracking-tight flex items-center gap-1"
+              >
+                냉장고 기반 AI 셰프
+                <span className="w-4 h-4 flex items-center justify-center border border-slate-300 rounded-full text-[9px]">?</span>
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full border border-amber-100">
-              <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              <span className="text-[10px] font-bold text-amber-700">AI READY</span>
+            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-[10px] font-bold text-amber-700">AI READY</span>
           </div>
         </div>
       </header>
 
-      <main className="p-4 space-y-8">
-        <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-3 shadow-sm">
-          <div className="space-y-1">
-            <p className="text-[11px] font-black text-amber-600 uppercase tracking-widest">오늘의 셰프</p>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              frichef는 냉장고 속 재료와 사용 가능한 도구를 기반으로 한국어 레시피를 만들어 주는 개인 셰프입니다.
-            </p>
-          </div>
-          <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="프로필" className="w-10 h-10 rounded-2xl object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                  {user.displayName ? user.displayName.charAt(0) : 'G'}
-                </div>
-              )}
-              <div>
-                <p className="text-sm font-bold text-slate-800">{user.displayName || user.email}</p>
-                <p className="text-[11px] text-slate-500">Google 로그인 완료</p>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-100"
-            >
-              로그아웃
-            </button>
-          </div>
-        </section>
-
-        <ToolBar tools={tools} onToggle={handleToggleTool} />
-        
-        <IngredientManager 
-          ingredients={ingredients}
-          onAdd={handleAddIngredient}
-          onToggle={handleToggleIngredient}
-          onDelete={handleDeleteIngredient}
-          onUpdate={handleUpdateIngredientExpiry}
-          syncError={remoteSyncError}
-          syncLoading={isRemoteDataLoading}
-        />
-
-        <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
-          <div className="flex items-center gap-2 px-1">
-            <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">4</div>
-            <h2 className="font-bold text-slate-700 text-sm">저장된 레시피</h2>
-            {remoteSyncError && (
-              <span className="text-[10px] text-rose-500 font-semibold">Firebase 동기화 실패</span>
-            )}
-          </div>
-          {savedRecipes.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-6">아직 저장한 레시피가 없습니다. 마음에 드는 레시피를 저장해보세요.</p>
-          ) : (
-            <div className="space-y-3">
-              {savedRecipes.map(recipe => (
-                <div key={recipe.id} className="border border-slate-100 rounded-2xl p-4 bg-slate-50/60">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-[11px] text-slate-400">{new Date(recipe.createdAt).toLocaleString()}</p>
-                      <h3 className="font-bold text-slate-800 text-base">{recipe.dishName}</h3>
-                    </div>
-                    <span className="text-[11px] font-semibold text-slate-500">
-                      {recipe.time || '시간 정보 없음'}
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-slate-500 mt-2">
-                    재료: {recipe.ingredients && recipe.ingredients.length > 0 ? recipe.ingredients.join(', ') : '정보 없음'}
-                  </p>
-                  <p className="text-[12px] text-slate-500">
-                    도구: {recipe.tools && recipe.tools.length > 0 ? recipe.tools.join(', ') : '조리도구 없이'}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+      <main className="p-4 pt-[120px] pb-32 space-y-5">
+        {renderTabContent()}
       </main>
 
-      {/* Floating Action Button */}
-      <div className={`fixed bottom-6 left-0 right-0 px-6 max-w-lg mx-auto z-40 transition-transform duration-300 ${selectedCount > 0 ? 'translate-y-0' : 'translate-y-24 opacity-0'}`}>
-        <button
-          onClick={handleGenerateRecipe}
-          disabled={!canGenerateRecipe}
-          className={`w-full text-white py-4 rounded-[1.5rem] font-black shadow-2xl shadow-slate-900/30 flex items-center justify-center gap-3 group active:scale-[0.98] transition-all ${canGenerateRecipe ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-300 cursor-not-allowed'}`}
-        >
-          <div className="relative">
-            <Sparkles className="w-5 h-5 text-amber-400 group-hover:rotate-12 transition-transform" />
-          </div>
-          <span className="text-base">레시피 생성하기</span>
-          <span className="bg-white/20 px-2 py-0.5 rounded-md text-xs ml-1 font-bold">
-            {selectedCount}
-          </span>
-        </button>
-      </div>
 
-      <RecipeResult 
-        isOpen={isModalOpen}
-        isLoading={isLoading}
-        result={recipeResult}
-        onClose={() => setIsModalOpen(false)}
-        contextIngredients={lastSelectedIngredients}
-        contextTools={lastSelectedTools}
-        onRegenerate={handleGenerateRecipe}
-        onSave={handleSaveRecipe}
-      />
+      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t.border-slate-200">
+        <div className="max-w-lg mx-auto grid grid-cols-5">
+          <button
+            onClick={() => setActiveTab('add')}
+            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'add' ? 'text-slate-900' : 'text-slate-400'}`}
+          >
+            <Plus className="w-5 h-5" />
+            재료추가
+          </button>
+          <button
+            onClick={() => setActiveTab('select')}
+            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'select' ? 'text-slate-900' : 'text-slate-400'}`}
+          >
+            <ClipboardList className="w-5 h-5" />
+            재료선택
+          </button>
+          <button
+            onClick={() => setActiveTab('tools')}
+            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'tools' ? 'text-slate-900' : 'text-slate-400'}`}
+          >
+            <UtensilsCrossed className="w-5 h-5" />
+            도구선택
+          </button>
+          <button
+            onClick={() => setActiveTab('recipe')}
+            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'recipe' ? 'text-slate-900' : 'text-slate-400'}`}
+          >
+            <Sparkles className="w-5 h-5" />
+            레시피
+          </button>
+          <button
+            onClick={() => setActiveTab('info')}
+            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'info' ? 'text-slate-900' : 'text-slate-400'}`}
+          >
+            <ChefHat className="w-5 h-5" />
+            내 정보
+          </button>
+        </div>
+      </footer>
     </div>
   );
 };

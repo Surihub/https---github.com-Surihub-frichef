@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban, ClipboardList, Plus } from 'lucide-react';
+import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban, ClipboardList, Youtube, Settings } from 'lucide-react';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import ToolBar from './components/ToolBar';
-import IngredientManager from './components/IngredientManager';
-import RecipeResult from './components/RecipeResult';
+import useSharedKitchen from './hooks/useSharedKitchen';
+import SettingsDialog from './components/SettingsDialog';
+import YoutubeRecipes from './components/YoutubeRecipes';
+import RecipeWorkspace from './components/RecipeWorkspace';
 import { generateRecipe } from './services/geminiService';
-import { auth, googleProvider, db } from './src/services/firebaseClient';
+import { auth, googleProvider } from './src/services/firebaseClient';
 
 const getDefaultIngredients = () => ([
   { id: 1, name: '계란', expiryDate: '2026-02-05', selected: false },
@@ -92,14 +92,16 @@ const App = () => {
   });
 
   const [recipeResult, setRecipeResult] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isRemoteDataLoading, setIsRemoteDataLoading] = useState(false);
-  const [hasLoadedRemoteData, setHasLoadedRemoteData] = useState(false);
-  const [remoteSyncError, setRemoteSyncError] = useState(null);
-  const [lastSelectedIngredients, setLastSelectedIngredients] = useState([]);
-  const [lastSelectedTools, setLastSelectedTools] = useState([]);
-  const [activeTab, setActiveTab] = useState('add');
+  const kitchen = useSharedKitchen(user, setIngredients, setSavedRecipes);
+  const isRemoteDataLoading = kitchen.loading;
+  const hasLoadedRemoteData = kitchen.ready;
+  const remoteSyncError = kitchen.error;
+  const [activeTab, setActiveTab] = useState('saved');
+  const [ingredientText, setIngredientText] = useState('');
+  const [openRecipe, setOpenRecipe] = useState(null);
+  const [recipeSearch, setRecipeSearch] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, currentUser => {
@@ -133,87 +135,6 @@ const App = () => {
     localStorage.setItem('fridge_tools', JSON.stringify(selectionMap));
   }, [tools]);
 
-  useEffect(() => {
-    if (!user) {
-      setIsRemoteDataLoading(false);
-      setHasLoadedRemoteData(false);
-      setRemoteSyncError(null);
-      return;
-    }
-
-    let isActive = true;
-    const loadRemoteData = async () => {
-      setIsRemoteDataLoading(true);
-      try {
-        const docRef = doc(db, 'users', user.uid);
-        const snapshot = await getDoc(docRef);
-        if (!isActive) return;
-
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setIngredients(Array.isArray(data.ingredients) ? data.ingredients : getDefaultIngredients());
-          setSavedRecipes(Array.isArray(data.recipes) ? data.recipes : []);
-        } else {
-          const defaults = getDefaultIngredients();
-          await setDoc(docRef, { ingredients: defaults, recipes: [] }, { merge: true });
-          if (!isActive) return;
-          setIngredients(defaults);
-          setSavedRecipes([]);
-        }
-        setHasLoadedRemoteData(true);
-        setRemoteSyncError(null);
-      } catch (error) {
-        if (isActive) {
-          console.error('Failed to load data from Firebase', error);
-          setRemoteSyncError('Firebase 동기화에 실패했습니다. 로컬 데이터만 사용합니다.');
-          setHasLoadedRemoteData(true);
-        }
-      } finally {
-        if (isActive) {
-          setIsRemoteDataLoading(false);
-        }
-      }
-    };
-
-    loadRemoteData();
-
-    return () => {
-      isActive = false;
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || !hasLoadedRemoteData || remoteSyncError) return;
-
-    const syncIngredients = async () => {
-      try {
-        const docRef = doc(db, 'users', user.uid);
-        await setDoc(docRef, { ingredients }, { merge: true });
-      } catch (error) {
-        console.error('Failed to sync ingredients to Firebase', error);
-        setRemoteSyncError('Firebase에 재료를 저장하지 못했습니다.');
-      }
-    };
-
-    syncIngredients();
-  }, [user, ingredients, hasLoadedRemoteData, remoteSyncError]);
-
-  useEffect(() => {
-    if (!user || !hasLoadedRemoteData || remoteSyncError) return;
-
-    const syncRecipes = async () => {
-      try {
-        const docRef = doc(db, 'users', user.uid);
-        await setDoc(docRef, { recipes: savedRecipes }, { merge: true });
-      } catch (error) {
-        console.error('Failed to sync recipes to Firebase', error);
-        setRemoteSyncError('Firebase에 레시피를 저장하지 못했습니다.');
-      }
-    };
-
-    syncRecipes();
-  }, [user, savedRecipes, hasLoadedRemoteData, remoteSyncError]);
-
   const handleToggleTool = id => {
     setTools(prev => {
       const target = prev.find(tool => tool.id === id);
@@ -235,59 +156,28 @@ const App = () => {
     });
   };
 
-  const handleAddIngredient = (name, date) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
-
-    setIngredients(prev => [
-      ...prev,
-      { id: Date.now(), name: trimmedName, expiryDate: date || '', selected: true },
-    ]);
-  };
-
-  const handleToggleIngredient = id => {
-    setIngredients(prev => prev.map(item => (item.id === id ? { ...item, selected: !item.selected } : item)));
-  };
-
-  const handleDeleteIngredient = id => {
-    setIngredients(prev => prev.filter(item => item.id !== id));
-  };
-
-  const handleUpdateIngredientExpiry = (id, date) => {
-    setIngredients(prev => prev.map(item => (item.id === id ? { ...item, expiryDate: date || '' } : item)));
-  };
-
-  const handleClearAllSelections = () => {
-    setIngredients(prev => prev.map(item => ({ ...item, selected: false })));
-  };
-
-  const handleSelectAllIngredients = () => {
-    setIngredients(prev => prev.map(item => ({ ...item, selected: true })));
-  };
-
-  const handleDeleteSavedRecipe = id => {
-    setSavedRecipes(prev => prev.filter(recipe => recipe.id !== id));
+  const handleDeleteSavedRecipe = async id => {
+    try { await kitchen.mutateRecipes(previous => previous.filter(recipe => recipe.id !== id)); }
+    catch { alert('삭제 실패 · 레시피함 연결 상태 확인'); }
   };
   const handleGenerateRecipe = async () => {
-    const selectedIngs = ingredients.filter(i => i.selected).map(i => i.name);
-    const selectedTools = tools.filter(t => t.selected).map(t => t.name);
+    const selectedIngs = ingredientText.split(/[,，\n]/).map(value => value.trim()).filter(Boolean);
+    const selectedTools = [];
 
-    setLastSelectedIngredients(selectedIngs);
-    setLastSelectedTools(selectedTools);
 
     if (selectedIngs.length === 0) {
-      alert('재료를 최소 하나 이상 선택해주세요!');
+      alert('재료를 최소 하나 이상 입력해주세요!');
       return;
     }
 
     setActiveTab('recipe');
-    setIsModalOpen(true);
     setIsLoading(true);
     setRecipeResult(null);
 
     try {
       const result = await generateRecipe(selectedIngs, selectedTools);
       setRecipeResult(result);
+      setOpenRecipe({ ...result, ingredients: result.ingredients || selectedIngs, notes: '' });
     } catch (error) {
       setRecipeResult({ error: '레시피를 생성하는 도중 문제가 발생했습니다.' });
     } finally {
@@ -295,27 +185,27 @@ const App = () => {
     }
   };
 
-  const handleSaveRecipe = () => {
-    if (!recipeResult || 'error' in recipeResult) {
-      alert('저장할 레시피가 없습니다. 먼저 레시피를 생성해주세요.');
-      return;
-    }
-
-    const recipeRecord = {
-      id: Date.now(),
-      dishName: recipeResult.dishName || 'AI 셰프의 레시피',
-      difficulty: recipeResult.difficulty || '',
-      time: recipeResult.time || '',
-      steps: recipeResult.steps || [],
-      extraNeeded: recipeResult.extraNeeded || [],
-      proTip: recipeResult.proTip || '',
-      ingredients: lastSelectedIngredients,
-      tools: lastSelectedTools,
-      createdAt: new Date().toISOString(),
+  const handleSaveRecipe = async (draft, options = {}) => {
+    const record = {
+      ...draft,
+      id: draft.id ?? crypto.randomUUID(),
+      createdAt: draft.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-
-    setSavedRecipes(prev => [recipeRecord, ...prev]);
-    alert('레시피가 저장되었습니다.');
+    try {
+      await kitchen.mutateRecipes(previous => {
+        if (options.expectedRecipe && JSON.stringify(previous.find(recipe => recipe.id === draft.id)) !== JSON.stringify(options.expectedRecipe)) throw new Error('다른 기기에서 수정된 레시피');
+        if (draft.id && !previous.some(recipe => recipe.id === draft.id)) throw new Error('삭제된 레시피');
+        return draft.id ? previous.map(recipe => recipe.id === draft.id ? record : recipe) : [record, ...previous];
+      });
+    } catch {
+      alert('저장 실패 · 연결 상태 확인 후 다시 저장');
+      return false;
+    }
+    setOpenRecipe(options.keepOpen ? record : null);
+    setRecipeResult(null);
+    if (draft.type !== 'youtube') setActiveTab('saved');
+    return true;
   };
 
   const handleSubmitFeedback = () => {
@@ -361,33 +251,34 @@ const App = () => {
     }
   };
 
-  const selectedIngredients = ingredients.filter(i => i.selected);
-  const selectedToolsList = tools.filter(t => t.selected);
-  const selectedCount = selectedIngredients.length;
-  const canGenerateRecipe = selectedCount > 0 && !isLoading;
+  const canGenerateRecipe = ingredientText.split(/[,，\n]/).some(value => value.trim()) && !isLoading;
   const displayName = user?.displayName || user?.email || '숩숩';
 
+  const myRecipes = savedRecipes.filter(recipe => recipe.type !== 'youtube');
+  const videoRecipes = savedRecipes.filter(recipe => recipe.type === 'youtube');
   const renderSavedSection = () => (
     <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
       <div className="flex items-center justify-between px-1">
-        <h2 className="font-bold text-slate-700 text-sm">저장된 레시피</h2>
+        <h2 className="font-bold text-slate-700 text-sm">내 레시피 · {myRecipes.length}</h2>
         {remoteSyncError && (
           <span className="text-[10px] text-rose-500 font-semibold">Firebase 동기화 실패</span>
         )}
       </div>
-      {savedRecipes.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-6">아직 저장한 레시피가 없습니다. 마음에 드는 레시피를 저장해보세요.</p>
+      <label className="block"><span className="sr-only">내 레시피 검색</span><input value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} placeholder="요리 이름이나 재료 검색" className="w-full border rounded-xl p-3" /></label>
+      {isRemoteDataLoading && <p role="status" className="text-sm text-slate-500">저장된 레시피를 불러오고 있습니다.</p>}
+      {myRecipes.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-6">저장한 레시피 없음</p>
       ) : (
         <div className="space-y-3">
-          {savedRecipes.map(recipe => (
+          {myRecipes.filter(recipe => [recipe.dishName, ...(recipe.ingredients || [])].join(' ').toLowerCase().includes(recipeSearch.toLowerCase())).map(recipe => (
             <div key={recipe.id} className="border border-slate-100 rounded-2xl p-4 bg-slate-50/60">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[11px] text-slate-400">{new Date(recipe.createdAt).toLocaleString()}</p>
-                  <h3 className="font-bold text-slate-800 text-base">{recipe.dishName}</h3>
+                  <button onClick={() => setOpenRecipe(recipe)} className="text-left font-bold text-slate-800 text-lg py-2">{recipe.dishName} →</button>
                 </div>
                 <button
-                  onClick={() => handleDeleteSavedRecipe(recipe.id)}
+                  onClick={() => { if (window.confirm('이 레시피를 삭제하시겠습니까?')) handleDeleteSavedRecipe(recipe.id); }}
                   className="text-[10px] text-rose-500 border border-rose-200 px-2 py-0.5 rounded-full"
                 >
                   삭제
@@ -396,9 +287,6 @@ const App = () => {
               <p className="text-[12px] text-slate-500 mt-2">
                 재료: {recipe.ingredients && recipe.ingredients.length > 0 ? recipe.ingredients.join(', ') : '정보 없음'}
               </p>
-              <p className="text-[12px] text-slate-500">
-                도구: {recipe.tools && recipe.tools.length > 0 ? recipe.tools.join(', ') : '조리도구 없이'}
-              </p>
             </div>
           ))}
         </div>
@@ -406,173 +294,14 @@ const App = () => {
     </section>
   );
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'add':
-        return (
-          <IngredientManager
-            ingredients={ingredients}
-            onAdd={handleAddIngredient}
-            onToggle={handleToggleIngredient}
-            onDelete={handleDeleteIngredient}
-            onUpdate={handleUpdateIngredientExpiry}
-            syncError={remoteSyncError}
-            syncLoading={isRemoteDataLoading}
-            addStepNumber="1"
-            addTitle="재료 추가"
-            showListSection={false}
-          />
-        );
-      case 'select':
-        return (
-          <IngredientManager
-            ingredients={ingredients}
-            onAdd={handleAddIngredient}
-            onToggle={handleToggleIngredient}
-            onDelete={handleDeleteIngredient}
-            onUpdate={handleUpdateIngredientExpiry}
-            syncError={remoteSyncError}
-            syncLoading={isRemoteDataLoading}
-            showAddSection={false}
-            listStepNumber="2"
-            listTitle="재료 선택"
-            onClearSelections={handleClearAllSelections}
-            onSelectAll={handleSelectAllIngredients}
-          />
-        );
-      case 'tools':
-        return (
-          <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
-            <div className="flex items-center gap-2 px-1">
-              <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold">3</div>
-              <h2 className="font-bold text-slate-700 text-sm">조리도구 선택
-</h2>
-            </div>
-            <ToolBar tools={tools} onToggle={handleToggleTool} />
-          </section>
-        );
-      case 'recipe':
-        return (
-          <>
-            <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-slate-500">선택된 재료</p>
-                  <p className="text-lg font-black text-slate-900">{selectedCount}개</p>
-                </div>
-                <button
-                  onClick={() => setActiveTab('select')}
-                  className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl"
-                >
-                  재료 다시 선택
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {selectedIngredients.length === 0 ? (
-                  <span className="text-xs text-slate-400">선택된 재료가 없습니다.</span>
-                ) : (
-                  selectedIngredients.map(ing => (
-                    <span key={ing.id} className="px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-bold">{ing.name}</span>
-                  ))
-                )}
-              </div>
-              <button
-                onClick={handleGenerateRecipe}
-                disabled={!canGenerateRecipe}
-                className={`w-full py-4 rounded-2xl font-black text-white text-lg ${canGenerateRecipe ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-300 cursor-not-allowed'}`}
-              >
-                레시피 만들기
-              </button>
-            </section>
-
-            <RecipeResult
-              isOpen={isModalOpen}
-              isLoading={isLoading}
-              result={recipeResult}
-              onClose={() => setIsModalOpen(false)}
-              contextIngredients={lastSelectedIngredients}
-              contextTools={lastSelectedTools}
-              onRegenerate={handleGenerateRecipe}
-              onSave={handleSaveRecipe}
-            />
-          </>
-        );
-      case 'info':
-        return (
-          <div className="space-y-4">
-            <section className="bg-white border border-slate-100 rounded-3xl p-6 space-y-3 shadow-sm">
-              <h2 className="text-xl font-black text-slate-800">frichef에 대하여</h2>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                frichef는 냉장고 속 재료와 사용할 수 있는 조리도구만으로도 집에서 손쉽게 요리를 즐길 수 있도록 도와주는 AI 셰프 앱입니다.
-                Google Gemini와 연동되어 한국어 레시피를 빠르게 추천하며, 필요한 재료와 도구를 단계별로 안내합니다.
-              </p>
-              <p className="text-sm font-bold text-slate-600">제작자 : 황수빈</p>
-            </section>
-
-            <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-black text-slate-800">사용자 피드백</h3>
-                <span className="text-xs text-slate-400">별점을 선택하고 의견을 남겨주세요</span>
-              </div>
-              <div className="flex justify-center gap-2">
-                {[1, 2, 3, 4, 5].map(value => (
-                  <button
-                    key={value}
-                    onClick={() => setFeedbackRating(value)}
-                    className={`w-10 h-10 rounded-full border font-bold ${feedbackRating === value ? 'bg-amber-400 text-white border-amber-400' : 'bg-white text-slate-500 border-slate-200'}`}
-                  >
-                    {value}★
-                  </button>
-                ))}
-              </div>
-              <textarea
-                className="w-full border border-slate-200 rounded-2xl p-3 text-sm resize-none focus:ring-1 focus:ring-amber-400"
-                rows={3}
-                placeholder="주관식 피드백을 남겨주세요"
-                value={feedbackComment}
-                onChange={e => setFeedbackComment(e.target.value)}
-              />
-              <button
-                onClick={handleSubmitFeedback}
-                className="w-full bg-slate-900 text-white py-3 rounded-2xl font-bold"
-              >
-                피드백 제출
-              </button>
-              {feedbacks.length > 0 && (
-                <div className="space-y-3">
-                  {feedbacks.map(entry => (
-                    <div key={entry.id} className="border border-slate-100 rounded-2xl p-3">
-                      <div className="flex justify-between text-xs text-slate-400">
-                        <span>{entry.createdAt}</span>
-                        <button onClick={() => handleDeleteFeedback(entry.id)} className="text-rose-500">삭제</button>
-                      </div>
-                      <p className="text-sm font-bold text-amber-500">{'★'.repeat(entry.rating)}</p>
-                      <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{entry.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="bg-white border border-slate-100 rounded-3xl p-6 space-y-3 shadow-sm text-center">
-              <h2 className="text-xl font-black text-slate-800">{displayName}님 환영합니다!</h2>
-              <p className="text-sm text-slate-500">계정 정보를 안전하게 동기화하고 있습니다.</p>
-              <button
-                onClick={handleLogout}
-                className="mt-2 bg-slate-900 text-white px-4 py-2 rounded-2xl font-bold"
-              >
-                로그아웃
-              </button>
-            </section>
-
-            {renderSavedSection()}
-          </div>
-        );
-      default:
-        return renderSavedSection();
-    }
-  };
-
+  const renderTabContent = () => activeTab === 'recipe' ? (
+    <section className="space-y-5">
+      <div><p className="text-sm text-amber-700 font-bold">AI 셰프와 함께</p><h2 className="text-2xl font-black mt-2">오늘은 무엇을 만들까요?</h2><p className="text-sm text-slate-500 mt-2">재료를 입력하고, 만들어진 레시피를 내 입맛에 맞게 수정해보세요.</p></div>
+      <label className="block space-y-2"><span className="font-bold">사용할 재료</span><textarea value={ingredientText} onChange={e => setIngredientText(e.target.value)} rows={3} placeholder="계란 2개, 양파 반 개, 밥 1공기" className="w-full rounded-2xl border p-4 text-base" /></label>
+      <button disabled={!canGenerateRecipe} onClick={handleGenerateRecipe} className="w-full bg-slate-900 text-white rounded-2xl p-4 font-bold disabled:opacity-40">{isLoading ? '레시피를 만들고 있습니다…' : 'AI 레시피 생성'}</button>
+      {recipeResult?.error && <p role="alert" className="text-rose-600">{recipeResult.error} 다시 생성해주세요.</p>}
+    </section>
+  ) : activeTab === 'youtube' ? <YoutubeRecipes recipes={videoRecipes} onSave={handleSaveRecipe} onDelete={handleDeleteSavedRecipe} /> : renderSavedSection();
 
   if (!isAuthInitialized) {
     return (
@@ -630,66 +359,26 @@ const App = () => {
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight text-slate-800">frichef</h1>
-              <button
-                onClick={() => alert('frichef는 냉장고 재료와 도구를 기반으로 한국어 레시피를 제안하는 개인 AI 셰프입니다.')}
-                className="text-[11px] text-slate-500 font-semibold tracking-tight flex items-center gap-1"
-              >
-                냉장고 기반 AI 셰프
-                <span className="w-4 h-4 flex items-center justify-center border border-slate-300 rounded-full text-[9px]">?</span>
-              </button>
+              <p className="text-[11px] text-slate-500">나만의 레시피 노트</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full border border-amber-100">
-            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-amber-700">AI READY</span>
-          </div>
+          <button aria-label="설정" onClick={() => setShowSettings(true)} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100"><Settings className="w-5 h-5" /></button>
         </div>
       </header>
 
-      <main className="p-4 pt-[120px] pb-32 space-y-5">
-        {renderTabContent()}
+      <main className="p-4 pt-[90px] pb-32 space-y-5">
+        {remoteSyncError && <p role="alert" className="text-sm text-rose-600">{remoteSyncError}</p>}
+        {isRemoteDataLoading ? <p role="status" className="text-center text-slate-500 py-10">내 레시피를 불러오고 있습니다…</p> : hasLoadedRemoteData ? renderTabContent() : null}
       </main>
 
-
-      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t.border-slate-200">
-        <div className="max-w-lg mx-auto grid grid-cols-5">
-          <button
-            onClick={() => setActiveTab('add')}
-            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'add' ? 'text-slate-900' : 'text-slate-400'}`}
-          >
-            <Plus className="w-5 h-5" />
-            재료추가
-          </button>
-          <button
-            onClick={() => setActiveTab('select')}
-            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'select' ? 'text-slate-900' : 'text-slate-400'}`}
-          >
-            <ClipboardList className="w-5 h-5" />
-            재료선택
-          </button>
-          <button
-            onClick={() => setActiveTab('tools')}
-            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'tools' ? 'text-slate-900' : 'text-slate-400'}`}
-          >
-            <UtensilsCrossed className="w-5 h-5" />
-            도구선택
-          </button>
-          <button
-            onClick={() => setActiveTab('recipe')}
-            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'recipe' ? 'text-slate-900' : 'text-slate-400'}`}
-          >
-            <Sparkles className="w-5 h-5" />
-            레시피
-          </button>
-          <button
-            onClick={() => setActiveTab('info')}
-            className={`py-3 flex flex-col items-center gap-1 text-xs font-semibold ${activeTab === 'info' ? 'text-slate-900' : 'text-slate-400'}`}
-          >
-            <ChefHat className="w-5 h-5" />
-            내 정보
-          </button>
-        </div>
+      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <nav aria-label="주 메뉴" className="max-w-lg mx-auto grid grid-cols-3">
+          {[['saved', '내 레시피', ClipboardList], ['youtube', '유튜브 레시피', Youtube], ['recipe', '레시피 만들기', Sparkles]].map(([tab, title, Icon]) => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined} onClick={() => setActiveTab(tab)} className={`py-4 flex flex-col items-center gap-1 text-xs font-bold ${activeTab === tab ? 'text-slate-900' : 'text-slate-400'}`}><Icon className="w-5 h-5" />{title}</button>)}
+        </nav>
       </footer>
+      {openRecipe && <RecipeWorkspace key={openRecipe.id || 'draft'} recipe={openRecipe} onClose={() => setOpenRecipe(null)} onSave={handleSaveRecipe} />}
+
+      {showSettings && <SettingsDialog user={user} kitchen={kitchen} onClose={() => setShowSettings(false)} onLogout={handleLogout} error={authError} />}
     </div>
   );
 };

@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function invited() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in resource.data.get('sharedWith', []);
+    }
+    match /users/{uid} {
+      allow read: if owner(uid) || invited();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly(['recipes', 'ingredients', 'sharedWith'])
+        && request.resource.data.recipes is list
+        && request.resource.data.ingredients is list
+        && request.resource.data.get('sharedWith', []) is list
+        && request.resource.data.get('sharedWith', []).size() <= 1;
+      allow update: if (owner(uid) || invited())
+        && request.resource.data.recipes is list
+        && request.resource.data.ingredients is list
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          owner(uid) ? ['recipes', 'ingredients', 'sharedWith'] : ['recipes', 'ingredients'])
+        && request.resource.data.get('sharedWith', []) is list
+        && request.resource.data.get('sharedWith', []).size() <= 1;
+      allow delete: if false;
+    }
+  }
+}

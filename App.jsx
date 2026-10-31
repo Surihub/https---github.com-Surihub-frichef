@@ -8,6 +8,7 @@ import SettingsDialog from './components/SettingsDialog';
 import YoutubeRecipes from './components/YoutubeRecipes';
 import SavedPlaces from './components/SavedPlaces';
 import RecipeWorkspace from './components/RecipeWorkspace';
+import { sameRecord } from './services/recordEquality.js';
 import { generateRecipe } from './services/geminiService';
 import { auth, googleProvider } from './src/services/firebaseClient';
 
@@ -198,7 +199,7 @@ const App = () => {
     try {
       await kitchen.mutateRecipes(previous => {
         const current = previous.find(recipe => recipe.id === draft.id);
-        if (options.expectedRecipe && JSON.stringify(current) !== JSON.stringify(options.expectedRecipe)) throw new Error('다른 기기에서 수정된 레시피');
+        if (options.expectedRecipe && !sameRecord(current, options.expectedRecipe)) throw new Error('다른 기기에서 수정된 레시피');
         if (Object.hasOwn(options, 'expectedNotes') && (current?.notes || '') !== options.expectedNotes) throw new Error('다른 기기에서 수정된 레시피');
         if (draft.id && !previous.some(recipe => recipe.id === draft.id)) throw new Error('삭제된 레시피');
         const saved = options.notesOnly ? { ...current, notes: draft.notes, updatedAt: record.updatedAt } : record;

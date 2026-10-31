@@ -23,5 +23,9 @@ service cloud.firestore {
         && request.resource.data.get('sharedWith', []) is list;
       allow delete: if false;
     }
+    // Preserve the project's existing policy for other applications' collections.
+    match /{collection}/{document=**} {
+      allow read, write: if collection != 'users' && signedIn();
+    }
   }
 }

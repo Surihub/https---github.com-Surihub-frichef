@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, query, runTransaction, setDoc, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, runTransaction, where } from 'firebase/firestore';
 import { db } from '../src/services/firebaseClient';
 import { mergeKitchenItems, sharedWorkspaceId } from '../services/sharedKitchen.js';
 
@@ -129,7 +129,25 @@ export default function useSharedKitchen(user, setIngredients, setRecipes) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error('구글 계정 이메일을 확인해주세요.');
     if (!user || connection.current?.uid !== user.uid || connection.current.id !== user.uid) throw new Error('가족 레시피함을 만든 계정에서 초대할 수 있습니다.');
     if (normalized === user.email?.toLowerCase()) throw new Error('상대방 이메일을 입력해주세요.');
-    await setDoc(doc(db, 'users', user.uid), { sharedWith: [normalized] }, { merge: true });
+    const current = connection.current;
+    await runTransaction(db, async transaction => {
+      const ref = doc(db, 'users', user.uid);
+      const snapshot = await transaction.get(ref);
+      if (connection.current !== current || !snapshot.exists()) throw new Error('공유 연결 상태를 확인해주세요.');
+      const previous = snapshot.data().sharedWith || [];
+      if (previous.includes(normalized)) throw new Error('이미 추가된 계정입니다.');
+      transaction.update(ref, { sharedWith: [...previous, normalized] });
+    });
   };
-  return { workspaceId, members, loading, ready, error, mutateRecipes: transform => mutateField('recipes', transform), mutateIngredients: transform => mutateField('ingredients', transform), invite };
+  const removeMember = async email => {
+    const current = connection.current;
+    if (!user || current?.uid !== user.uid || current.id !== user.uid) throw new Error('가족 레시피함을 만든 계정에서 해제할 수 있습니다.');
+    await runTransaction(db, async transaction => {
+      const ref = doc(db, 'users', user.uid);
+      const snapshot = await transaction.get(ref);
+      if (connection.current !== current || !snapshot.exists()) throw new Error('공유 연결 상태를 확인해주세요.');
+      transaction.update(ref, { sharedWith: (snapshot.data().sharedWith || []).filter(member => member !== email) });
+    });
+  };
+  return { workspaceId, members, loading, ready, error, mutateRecipes: transform => mutateField('recipes', transform), mutateIngredients: transform => mutateField('ingredients', transform), invite, removeMember };
 }

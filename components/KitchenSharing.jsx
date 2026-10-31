@@ -1,27 +1,39 @@
 import React, { useState } from 'react';
+import { UserRound, UserRoundPlus, X } from 'lucide-react';
 
 export default function KitchenSharing({ user, kitchen }) {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const own = kitchen.workspaceId === user.uid;
+  const reportError = error => {
+    setFailed(true);
+    setMessage(error.code === 'permission-denied' ? '공유 권한이 적용되지 않았습니다. Firestore 공유 규칙을 확인해주세요.' : error.message.includes('계정') || error.message.includes('이메일') || error.message.includes('상태') ? error.message : '공유 설정을 저장하지 못했습니다. 연결 상태를 확인해주세요.');
+  };
   const invite = async event => {
-    event.preventDefault(); setBusy(true); setMessage('');
-    try { await kitchen.invite(email); setEmail(''); setMessage('가족 공유가 등록되었습니다. 상대방이 로그인하면 자동으로 연결됩니다.'); }
-    catch (error) { setMessage(error.message.includes('이메일') || error.message.includes('계정에서') ? error.message : '초대 실패 · 연결 상태와 Firestore 공유 규칙을 확인해주세요.'); }
+    event.preventDefault(); setBusy(true); setMessage(''); setFailed(false);
+    try { await kitchen.invite(email); setEmail(''); setMessage('계정을 추가했습니다. 상대방이 로그인하면 같은 목록이 표시됩니다.'); }
+    catch (error) { reportError(error); }
     finally { setBusy(false); }
   };
-  return <details className="rounded-2xl border bg-white p-3 text-sm">
-    <summary className="cursor-pointer font-bold">{own && !kitchen.members.length ? '가족과 레시피함 함께 쓰기' : '가족 레시피함'}</summary>
-    <div className="space-y-3 pt-3">
-      <p className="text-xs text-slate-500 break-all">{user.email}</p>
-      {own ? <form onSubmit={invite} className="space-y-2">
-        {kitchen.members.length > 0 && <p className="text-xs text-slate-500 break-all">공유 계정: {kitchen.members.join(', ')}</p>}
-        <input required type="email" aria-label="함께 쓸 구글 계정" value={email} onChange={event => setEmail(event.target.value)} placeholder="상대방 구글 이메일" className="w-full border rounded-lg p-3" />
-        <button disabled={busy || !kitchen.ready} className="w-full bg-slate-900 text-white rounded-lg py-3 disabled:opacity-40">{busy ? '등록 중…' : kitchen.members.length ? '공유 상대 변경' : '함께 쓸 계정 추가'}</button>
-        <p className="text-xs text-slate-400">가족의 기존 레시피도 하나로 합쳐집니다. 모든 레시피·유튜브·메모의 추가, 수정, 삭제가 서로 바로 반영됩니다.</p>
-      </form> : <p className="text-xs text-slate-500">가족과 하나의 저장소를 사용합니다. 모든 레시피·유튜브·메모가 함께 저장되고, 변경 내용이 바로 반영됩니다.</p>}
-      <p role="status" className="text-xs text-slate-500">{message || kitchen.error}</p>
-    </div>
-  </details>;
+  const remove = async member => {
+    if (!window.confirm(`${member} 계정의 공유를 해제하시겠습니까? 저장된 레시피와 갈 곳은 남아 있습니다.`)) return;
+    setBusy(true); setMessage(''); setFailed(false);
+    try { await kitchen.removeMember(member); setMessage('공유를 해제했습니다.'); }
+    catch (error) { reportError(error); }
+    finally { setBusy(false); }
+  };
+  return <section aria-labelledby="sharing-title" className="rounded-2xl border border-[#e8e2d5] bg-gradient-to-br from-[#fbf8f0] to-white p-4 space-y-4">
+    <header><h3 id="sharing-title" className="font-bold text-base text-[#453b2c]">공유 계정</h3><p className="text-xs leading-relaxed text-stone-500 mt-1">레시피·유튜브·갈 곳·메모를 함께 사용합니다.</p></header>
+    <div className="flex items-center gap-2.5 border-b border-stone-200/70 pb-3"><UserRound aria-hidden="true" className="w-4 h-4 text-stone-400 shrink-0" /><p className="text-xs text-stone-600 break-all min-w-0 flex-1">{user.email}</p><span className="text-[11px] text-stone-500 shrink-0">{own ? '소유자' : '내 계정'}</span></div>
+    {kitchen.members.length > 0 ? <ul className="divide-y divide-stone-100">{kitchen.members.map(member => <li key={member} className="flex items-center gap-2 py-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" /><span className="text-xs text-stone-700 break-all min-w-0 flex-1">{member}</span>{own && <button type="button" title="공유 해제" aria-label={`${member} 공유 해제`} disabled={busy || !kitchen.ready} onClick={() => remove(member)} className="w-8 h-8 rounded-full flex items-center justify-center text-stone-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 shrink-0"><X className="w-4 h-4" /></button>}</li>)}</ul> : <p className="text-xs text-stone-400">추가된 공유 계정이 없습니다.</p>}
+    {own ? <form onSubmit={invite} className="space-y-2.5">
+      <label className="block text-xs font-semibold text-stone-600" htmlFor="sharing-email">구글 계정 추가</label>
+      <input id="sharing-email" required type="email" autoComplete="email" disabled={busy} value={email} onChange={event => setEmail(event.target.value)} placeholder="example@gmail.com" className="w-full min-w-0 border border-stone-200 bg-white rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200" />
+      <button disabled={busy || !kitchen.ready || !email.trim()} className="w-full bg-[#453b2c] text-white rounded-xl py-3 text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"><UserRoundPlus aria-hidden="true" className="w-4 h-4" />{busy ? '저장 중…' : '공유 계정 추가'}</button>
+      <p className="text-[11px] leading-relaxed text-stone-400">기존 공유 계정은 유지됩니다. 계정을 하나씩 더 추가할 수 있습니다.</p>
+    </form> : <p className="text-xs text-stone-500">계정 추가와 해제는 레시피함 소유자가 관리합니다.</p>}
+    {(message || kitchen.error) && <p role={failed || kitchen.error ? 'alert' : 'status'} className={`text-xs leading-relaxed ${failed || kitchen.error ? 'text-rose-600' : 'text-emerald-700'}`}>{message || kitchen.error}</p>}
+  </section>;
 }

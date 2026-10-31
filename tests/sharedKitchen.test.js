@@ -204,3 +204,48 @@ test('Saved Naver places and Friday notes sync through the same family store', a
   assert.equal(family.recipes[0].notes, '금요일 함께 오픈런');
   owner.close(); family.close();
 });
+
+test('Adding multiple accounts preserves existing members and rejects duplicates', async () => {
+  const store = database({ owner: kitchen([], ['first@example.com']) });
+  const owner = await client(store, 'owner', 'owner@example.com');
+  await owner.kitchen.invite(' SECOND@example.com ');
+  await owner.kitchen.invite('third@example.com');
+  assert.deepEqual(store.records.get('owner').sharedWith, ['first@example.com', 'second@example.com', 'third@example.com']);
+  await assert.rejects(owner.kitchen.invite('FIRST@example.com'), /이미 추가/);
+  await assert.rejects(owner.kitchen.invite('owner@example.com'), /상대방/);
+  owner.close();
+});
+
+test('Concurrent invitations keep both new accounts', async () => {
+  const store = database({ owner: kitchen([], ['first@example.com']) });
+  const owner = await client(store, 'owner', 'owner@example.com');
+  await Promise.all([owner.kitchen.invite('second@example.com'), owner.kitchen.invite('third@example.com')]);
+  assert.deepEqual([...store.records.get('owner').sharedWith].sort(), ['first@example.com', 'second@example.com', 'third@example.com']);
+  owner.close();
+});
+
+test('Three accounts see the same recipes, places, and note changes', async () => {
+  const store = database({ owner: kitchen([recipe(1, '계란찜')], ['a@example.com', 'b@example.com']), a: kitchen(), b: kitchen() });
+  const owner = await client(store, 'owner', 'owner@example.com');
+  const a = await client(store, 'a', 'a@example.com');
+  const b = await client(store, 'b', 'b@example.com');
+  await a.kitchen.mutateRecipes(items => [...items, recipe(2, '작은피자집', { type: 'place', notes: '금요일 오픈런' })]);
+  await settle();
+  assert.deepEqual(owner.recipes, a.recipes);
+  assert.deepEqual(a.recipes, b.recipes);
+  await b.kitchen.mutateRecipes(items => items.map(item => item.id === 2 ? { ...item, notes: '함께 가기' } : item));
+  await settle();
+  assert.equal(owner.recipes[1].notes, '함께 가기');
+  await assert.rejects(a.kitchen.invite('other@example.com'), /만든 계정/);
+  await assert.rejects(a.kitchen.removeMember('b@example.com'), /만든 계정/);
+  owner.close(); a.close(); b.close();
+});
+
+test('Removing one account preserves other memberships and saved data', async () => {
+  const store = database({ owner: kitchen([recipe(1, '계란찜')], ['a@example.com', 'b@example.com']) });
+  const owner = await client(store, 'owner', 'owner@example.com');
+  await owner.kitchen.removeMember('a@example.com');
+  assert.deepEqual(store.records.get('owner').sharedWith, ['b@example.com']);
+  assert.equal(store.records.get('owner').recipes[0].dishName, '계란찜');
+  owner.close();
+});

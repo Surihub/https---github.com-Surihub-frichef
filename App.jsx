@@ -212,7 +212,7 @@ const App = () => {
     if (draft.type !== 'place') setOpenRecipe(options.keepOpen ? record : null);
     setRecipeResult(null);
     if (draft.type === 'place') setActiveTab('places');
-    else if (draft.type !== 'youtube') setActiveTab('saved');
+    else if (!['youtube', 'instagram'].includes(draft.type)) setActiveTab('saved');
     return true;
   };
 
@@ -262,9 +262,9 @@ const App = () => {
   const canGenerateRecipe = ingredientText.split(/[,，\n]/).some(value => value.trim()) && !isLoading;
   const displayName = user?.displayName || user?.email || '숩숩';
 
-  const myRecipes = savedRecipes.filter(recipe => !['youtube', 'place'].includes(recipe.type));
+  const myRecipes = savedRecipes.filter(recipe => !['youtube', 'instagram', 'place'].includes(recipe.type));
   const places = savedRecipes.filter(recipe => recipe.type === 'place');
-  const videoRecipes = savedRecipes.filter(recipe => recipe.type === 'youtube');
+  const videoRecipes = savedRecipes.filter(recipe => ['youtube', 'instagram'].includes(recipe.type));
   const currentOpenRecipe = openRecipe?.id ? savedRecipes.find(recipe => recipe.id === openRecipe.id) : openRecipe;
   const renderSavedSection = () => (
     <section className="recipe-library">

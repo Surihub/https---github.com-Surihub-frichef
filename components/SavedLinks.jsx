@@ -1,17 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Instagram, Youtube, Image as ImageIcon } from 'lucide-react';
 import TagEditor from './TagEditor';
 import { normalizeTags } from '../services/tags.js';
 import LinkIcon from './LinkIcon';
 import './savedLinks.css';
-import { youtubeUrl } from './recipeFormat';
+import { socialLink, socialItemLink, socialImageUrl } from '../services/socialLinks.js';
 import { cityDistrict, naverMapUrl, parseNaverShare } from '../services/placeFormat.js';
 
 const field = 'w-full rounded-xl border border-[#35393b] bg-[#1b1e20] p-3 text-base';
-function VideoImage({ url, title }) {
+function SocialImage({ item }) {
+  const link = socialItemLink(item);
+  const id = link?.platform === 'youtube' ? new URL(link.url).searchParams.get('v') : null;
+  const [image, setImage] = useState(id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : socialImageUrl(item.imageUrl));
   const [failed, setFailed] = useState(false);
-  const id = youtubeUrl(url) ? new URL(youtubeUrl(url)).searchParams.get('v') : null;
-  return id && !failed ? <img src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt={title} loading="lazy" onError={() => setFailed(true)} className="aspect-video w-full object-cover" /> : <div className="aspect-video bg-gradient-to-br from-[#252b2a] to-[#191c1e]" />;
+  const refreshed = useRef(false);
+  useEffect(() => {
+    let active = true;
+    setImage(id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : socialImageUrl(item.imageUrl)); setFailed(false); refreshed.current = false;
+    if (link?.platform === 'instagram' && !socialImageUrl(item.imageUrl)) {
+      fetch(`/.netlify/functions/social-preview?url=${encodeURIComponent(link.url)}`, { signal: AbortSignal.timeout(12000) }).then(response => response.ok ? response.json() : null).then(preview => { if (active && preview?.imageUrl) setImage(socialImageUrl(preview.imageUrl)); }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [item.imageUrl, link?.url, id]);
+  const recoverImage = () => {
+    setFailed(true);
+    if (link?.platform !== 'instagram' || refreshed.current) return;
+    refreshed.current = true;
+    fetch(`/.netlify/functions/social-preview?url=${encodeURIComponent(link.url)}`,{signal:AbortSignal.timeout(12000)}).then(response=>response.ok?response.json():null).then(preview=>{const next=socialImageUrl(preview?.imageUrl);if(next&&next!==image){setImage(next);setFailed(false);}}).catch(()=>{});
+  };
+  const Icon = link?.platform === 'instagram' ? Instagram : Youtube;
+  return image && !failed ? <img src={image} alt={`${item.dishName} 썸네일`} loading="lazy" referrerPolicy="no-referrer" onError={recoverImage} /> : <div className="link-photo-fallback"><Icon size={24} strokeWidth={1.4} aria-hidden="true" /><span>{link?.platform === 'instagram' ? 'Instagram' : 'YouTube'}</span></div>;
 }
 
 function PlaceImage({ item }) {
@@ -29,15 +47,18 @@ function PlaceImage({ item }) {
   }, [item.mapUrl, item.imageUrl]);
   let safe = false;
   try { const url = new URL(image); safe = url.protocol === 'https:' && (url.hostname.endsWith('.pstatic.net') || url.hostname.endsWith('.naver.net')) && !image.includes('og-map-'); } catch {}
-  return safe && !failed ? <img className="place-photo" src={image} alt={`${item.dishName} 대표 사진`} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : null;
+  return safe && !failed ? <img className="place-photo" src={image} alt={`${item.dishName} 대표 사진`} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : <div className="link-photo-fallback"><ImageIcon size={24} strokeWidth={1.4} aria-hidden="true" /><span>사진 없음</span></div>;
 }
 
 function LinkEditor({ item, mode, type, onClose, onSave, existingTags }) {
   const place = type === 'place';
   const [draft, setDraft] = useState(() => ({ dishName: '', notes: '', address: '', mapUrl: '', youtubeUrl: '', tags: [], ...item }));
-  const [linkText, setLinkText] = useState(item ? place ? item.mapUrl : item.youtubeUrl : '');
+  const [linkText, setLinkText] = useState(item ? place ? item.mapUrl : socialItemLink(item)?.url || '' : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
+  const automaticTitle = useRef('');
   const root = useRef(null);
   const base = useRef(item);
   const title = mode === 'notes' ? '메모' : item ? '수정' : '링크 추가';
@@ -57,21 +78,43 @@ function LinkEditor({ item, mode, type, onClose, onSave, existingTags }) {
     document.addEventListener('keydown', keydown);
     return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', keydown); previous?.focus(); };
   }, [onClose, busy]);
+  useEffect(() => {
+    if (place || mode === 'notes') return;
+    const link = socialLink(linkText.trim());
+    setPreviewUnavailable(false);
+    if (!link) { setPreviewLoading(false); return; }
+    if (base.current && socialItemLink(base.current)?.url === link.url && base.current.imageUrl) return;
+    let active = true;
+    const controller = new AbortController();
+    setPreviewLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`/.netlify/functions/social-preview?url=${encodeURIComponent(link.url)}`,{signal:controller.signal}).then(response => response.ok ? response.json() : null).then(preview => {
+        if (!active) return;
+        if (!preview) { setPreviewUnavailable(true); return; }
+        const lastTitle = automaticTitle.current;
+        setDraft(previous => ({ ...previous, ...(socialImageUrl(preview.imageUrl) ? {imageUrl:socialImageUrl(preview.imageUrl)} : {}), ...(!previous.dishName || previous.dishName === lastTitle ? {dishName:preview.title || previous.dishName} : {}) }));
+        automaticTitle.current = preview.title || '';
+        setPreviewUnavailable(!preview.title && !preview.imageUrl);
+      }).catch(() => {if(active)setPreviewUnavailable(true);}).finally(()=>{if(active)setPreviewLoading(false);});
+    },300);
+    return () => { active=false;clearTimeout(timer);controller.abort(); };
+  }, [linkText, place, mode]);
   const changeLink = value => {
     setLinkText(value);
     if (place) {
       const parsed = parseNaverShare(value);
       setDraft(previous => ({ ...previous, mapUrl: parsed.mapUrl, ...(parsed.dishName ? { dishName: parsed.dishName } : {}), ...(parsed.address ? { address: parsed.address } : {}) }));
-    } else setDraft(previous => ({ ...previous, youtubeUrl: value }));
+    } else setDraft(previous => ({ ...previous, socialUrl: value, imageUrl: '', youtubeUrl: '', instagramUrl: '' }));
   };
   const submit = async event => {
     event.preventDefault();
-    const link = place ? naverMapUrl(draft.mapUrl) : youtubeUrl(draft.youtubeUrl);
+    const social = place ? null : socialLink(linkText.trim());
+    const link = place ? naverMapUrl(draft.mapUrl) : social?.url;
     if (mode !== 'notes' && (!link || !draft.dishName.trim())) { setError('이름과 유효한 링크를 입력해주세요.'); return; }
     setBusy(true); setError('');
     try {
       const options = mode === 'notes' ? { notesOnly: true, expectedNotes: base.current.notes || '' } : base.current ? { expectedRecipe: base.current } : {};
-      let value = mode === 'notes' ? { ...base.current, notes: draft.notes } : { ...draft, type, dishName: draft.dishName.trim(), ...(place ? { mapUrl: link, address: cityDistrict(draft.address) } : { youtubeUrl: link }) };
+      let value = mode === 'notes' ? { ...base.current, notes: draft.notes } : { ...draft, type: place ? 'place' : social.platform, dishName: draft.dishName.trim(), ...(place ? { mapUrl: link, address: cityDistrict(draft.address) } : { socialUrl:link, youtubeUrl:social.platform==='youtube'?link:'', instagramUrl:social.platform==='instagram'?link:'' }) };
       if (mode !== 'notes') {
         value.tags = normalizeTags(draft.tags);
         if (place && (!value.imageUrl || base.current?.mapUrl !== link)) {
@@ -94,7 +137,8 @@ function LinkEditor({ item, mode, type, onClose, onSave, existingTags }) {
       <header className="flex items-center justify-between mb-4"><h2 id="link-editor-title" className="text-lg font-bold">{title}</h2><button type="button" disabled={busy} aria-label="닫기" onClick={onClose} className="p-2 rounded-full bg-[#282c2e]"><X className="w-5 h-5" /></button></header>
       <form onSubmit={submit} className="space-y-4">
         {mode === 'notes' ? <p className="font-bold">{draft.dishName}</p> : <>
-          <label className="block space-y-1 text-sm"><span>{place ? '네이버지도 링크 또는 공유 내용' : '유튜브 링크'}</span><textarea required rows={place ? 4 : 2} className={field} value={linkText} onChange={event => changeLink(event.target.value)} placeholder={place ? '[네이버지도]\n장소 이름\n주소\nhttps://naver.me/…' : 'https://youtu.be/…'} /></label>
+          <label className="block space-y-1 text-sm"><span>{place ? '네이버지도 링크 또는 공유 내용' : '유튜브·인스타그램 링크'}</span><textarea required rows={place ? 4 : 2} className={field} value={linkText} onChange={event => changeLink(event.target.value)} placeholder={place ? '[네이버지도]\n장소 이름\n주소\nhttps://naver.me/…' : '유튜브 또는 인스타그램 게시물·릴스 링크'} /></label>
+          {!place && <p role="status" className="text-xs text-[#999e98]">{previewLoading ? '미리보기를 불러오는 중…' : previewUnavailable ? '미리보기를 가져오지 못했습니다. 이름을 입력해 저장해주세요.' : ''}</p>}
           <label className="block space-y-1 text-sm"><span>이름</span><input required className={field} value={draft.dishName} onChange={event => setDraft(previous => ({ ...previous, dishName: event.target.value }))} /></label>
           {place && cityDistrict(draft.address) && <p className="text-sm text-slate-500">{cityDistrict(draft.address)}</p>}
         </>}
@@ -119,22 +163,22 @@ export default function SavedLinks({ items, type, onSave, onDelete }) {
   const [editor, setEditor] = useState(null);
   const close = React.useCallback(() => setEditor(null), []);
   return <section className="link-collection" data-kind={type}>
-    <header><div className="link-collection-heading"><h2>{place ? '갈 곳' : '유튜브 레시피'}</h2><span className="link-collection-count">{String(items.length).padStart(2, '0')}</span></div></header>
+    <header><div className="link-collection-heading"><h2>{place ? '갈 곳' : '유튜브 · 인스타'}</h2><span className="link-collection-count">{String(items.length).padStart(2, '0')}</span></div></header>
     {!items.length && <p className="text-sm text-slate-400 text-center py-10">저장한 링크가 없습니다. + 버튼으로 추가해주세요.</p>}
     {existingTags.length > 0 && <div className="tag-options tag-filters" aria-label="태그 필터"><button className={`tag-token ${!activeFilter ? 'is-selected' : ''}`} aria-pressed={!activeFilter} onClick={() => setTagFilter('')}>전체</button>{existingTags.map(tag => <button key={tag} className={`tag-token ${activeFilter === tag ? 'is-selected' : ''}`} aria-pressed={activeFilter === tag} onClick={() => setTagFilter(activeFilter === tag ? '' : tag)}>#{tag}</button>)}</div>}
     <div className="link-list">{visibleItems.map(item => {
-      const link = place ? naverMapUrl(item.mapUrl) : youtubeUrl(item.youtubeUrl);
+      const social = place ? null : socialItemLink(item);
+      const link = place ? naverMapUrl(item.mapUrl) : social?.url;
       return <article key={item.id} className="link-card">
         <a href={link || undefined} target="_blank" rel="noopener noreferrer" aria-label={`${item.dishName} 링크 열기`} className="link-card-hit"><span className="sr-only">{item.dishName}</span></a>
         <div className="link-card-tools">
           <button type="button" aria-label={`${item.dishName} 수정`} title="수정" onClick={() => setEditor({ item, mode: 'edit' })} className="link-card-tool"><LinkIcon name="edit" /></button>
           <button type="button" aria-label={`${item.dishName} 삭제`} title="삭제" onClick={() => { if (window.confirm('이 링크를 삭제하시겠습니까?')) onDelete(item.id); }} className="link-card-tool is-delete"><LinkIcon name="trash" /></button>
         </div>
-        {place && <PlaceImage item={item} />}
-        {!place && <VideoImage url={item.youtubeUrl} title={item.dishName} />}
+        <div className="link-thumbnail">{place ? <PlaceImage item={item} /> : <SocialImage item={item} />}</div>
         <div className={`link-card-body ${place ? 'is-place' : ''}`}>
           <div><div className="link-card-title"><h3>{item.dishName}</h3></div>
-          {place && cityDistrict(item.address) && <p className="link-card-address">{cityDistrict(item.address)}</p>}</div>
+          {place ? cityDistrict(item.address) && <p className="link-card-address">{cityDistrict(item.address)}</p> : <p className="link-card-address">{social?.platform === 'instagram' ? 'Instagram' : 'YouTube'}</p>}</div>
           {normalizeTags(item.tags).length > 0 && <div className="tag-options link-item-tags">{normalizeTags(item.tags).map(tag => <button type="button" key={tag} className="inline-tag" onClick={() => setTagFilter(tag)}>#{tag}</button>)}</div>}
           <button type="button" aria-label={`${item.dishName} 메모 수정`} onClick={() => setEditor({ item, mode: 'notes' })} className="link-card-note">
             <LinkIcon name="note" className="link-note-icon" />

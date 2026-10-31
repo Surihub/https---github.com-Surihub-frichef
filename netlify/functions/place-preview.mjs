@@ -1,9 +1,12 @@
 import { naverMapUrl } from '../../services/placeFormat.js';
 
-const decode = value => value.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+const decode = value => value.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#(x[\da-f]+|\d+);/gi, (entity, code) => {
+  const point = code[0].toLowerCase() === 'x' ? parseInt(code.slice(1), 16) : Number(code);
+  return point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : entity;
+});
 export function meta(html, property) {
   for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
-    const attrs = Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)].map(match => [match[1].toLowerCase(), decode(match[2])]));
+    const attrs = Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*(["'])(.*?)\2/gs)].map(match => [match[1].toLowerCase(), decode(match[3])]));
     if (attrs.property === property || attrs.name === property) return attrs.content || '';
   }
   return '';

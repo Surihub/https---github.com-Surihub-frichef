@@ -2,7 +2,7 @@ export function naverMapUrl(value) {
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
-    return ['naver.me', 'map.naver.com', 'm.map.naver.com', 'm.place.naver.com', 'place.naver.com'].includes(url.hostname) ? url.href : null;
+    return ['naver.me', 'map.naver.com', 'm.map.naver.com', 'm.place.naver.com', 'place.naver.com', 'pcmap.place.naver.com'].includes(url.hostname) ? url.href : null;
   } catch { return null; }
 }
 

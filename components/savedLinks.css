@@ -26,3 +26,14 @@
 .link-fab:hover { transform: translateY(-2px); }
 .link-editor { background: #1b1e20; color: #eeeee8; border: 1px solid #303436; }
 @media (prefers-reduced-motion: reduce) { .link-card-tool, .link-fab { transition: none; } }
+.tag-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.tag-token { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #3a403a; color: #b8c0b5; padding: 5px 9px; border-radius: 7px; font-size: 12px; line-height: 1.4; background: transparent; }
+.tag-token:hover, .tag-token.is-selected { color: #f5d85b; border-color: #796d35; background: #f5d85b0d; }
+.tag-filters { margin-bottom: 13px; }
+.tag-input { min-width: 0; flex: 1; width: 100%; border: 1px solid #35393b; border-radius: 10px; padding: 11px; background: #171a1b; font-size: 16px; }
+.tag-add { padding: 10px 4px; color: #f5d85b; font-size: 13px; }
+.tag-add:disabled { opacity: .35; }
+.link-item-tags { position: relative; z-index: 20; gap: 6px 12px; }
+.inline-tag { color: #c4b76b; font-size: 12px; }
+.link-card > .place-photo { width: 100%; height: 170px; max-height: none; margin: 35px 0 18px; border-radius: 10px; object-fit: cover; }
+.link-card:has(.place-photo) .link-card-tools, .link-card:has(>img) .link-card-tools { top: 0; }

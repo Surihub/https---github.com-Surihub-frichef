@@ -6,7 +6,7 @@ const fieldClass = 'w-full rounded-xl border border-[#35393b] p-2.5 bg-[#1b1e20]
 const quantityPattern = /(\d+(?:[./]\d+)?(?:\s*~\s*\d+)?\s*(?:큰술|작은술|공기|꼬집|스푼|컵|개|장|쪽|대|줌|봉|팩|인분|ml|mL|kg|g|L)|반\s*(?:큰술|작은술|컵|개|공기)|약간|적당량)/g;
 function Quantity({ text }) {
   return String(text).split(quantityPattern).map((part, index) => index % 2
-    ? <strong key={index} className="text-[#e5d6a9] bg-[#383628] rounded px-1">{part}</strong> : part);
+    ? <strong key={index} className="recipe-quantity">{part}</strong> : part);
 }
 function Step({ text }) {
   const heat = String(text).match(/(?:중\s*약|중\s*강|약|중|강)\s*불/g) || [];
@@ -18,15 +18,7 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
   const [draft, setDraft] = useState(() => ({ ...recipe, ingredients: ingredientsWithStepAmounts(recipe), extraNeeded: [] }));
   const [editing, setEditing] = useState(!recipe.id);
   const [error, setError] = useState('');
-  const [fontSize, setFontSize] = useState(() => {
-    const stored = Number(localStorage.getItem('frichef_recipe_font_size'));
-    return Number.isFinite(stored) && stored >= 16 && stored <= 28 ? stored : 18;
-  });
-  const changeFontSize = delta => setFontSize(previous => {
-    const next = Math.min(28, Math.max(16, previous + delta));
-    localStorage.setItem('frichef_recipe_font_size', String(next));
-    return next;
-  });
+  const fontSize = 17;
   const [filling, setFilling] = useState(false);
   const [ingredientInput, setIngredientInput] = useState(ingredientsWithStepAmounts(recipe).join('\n'));
   const [stepInput, setStepInput] = useState((recipe.steps || []).join('\n'));
@@ -97,10 +89,10 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
     if (link && !youtubeUrl(link)) { setError('유효한 유튜브 영상 링크 입력'); return; }
     onSave({ ...draft, dishName: draft.dishName.trim(), youtubeUrl: link ? youtubeUrl(link) : '' }, { expectedRecipe: recipe.id ? editBase.current : undefined });
   };
-  return <div role="dialog" aria-modal="true" aria-label="레시피 상세" className="fixed inset-0 z-50 bg-[#141617]">
+  return <div role="dialog" aria-modal="true" aria-label="레시피 상세" className="recipe-detail fixed inset-0 z-50">
     <div className="mx-auto max-w-lg flex flex-col" style={{ height: '100dvh', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <header className="flex items-center justify-between px-3 py-1 border-b border-[#303436] shrink-0">
-        <div role="group" aria-label="레시피 글자 크기" className="flex items-center gap-1"><button type="button" aria-label="글자 작게" disabled={fontSize <= 16} onClick={() => changeFontSize(-1)} className="w-7 h-7 rounded bg-[#282c2e] text-sm disabled:opacity-30">−</button><span aria-live="polite" className="text-[11px] text-[#979d97] w-7 text-center">{fontSize}</span><button type="button" aria-label="글자 크게" disabled={fontSize >= 28} onClick={() => changeFontSize(1)} className="w-7 h-7 rounded bg-[#282c2e] text-sm disabled:opacity-30">+</button></div><div className="flex gap-1">{!editing && <button disabled={repairing} onClick={() => setEditing(true)} className="px-2 py-1 text-xs">수정</button>}<button ref={close} onClick={onClose} className="rounded-lg px-2 py-1 text-xs bg-[#282c2e]">닫기</button></div>
+      <header className="recipe-detail-header">
+        <span>내 레시피</span><div className="flex items-center gap-4">{!editing && <button disabled={repairing} onClick={() => setEditing(true)} className="recipe-edit-action">수정</button>}<button ref={close} onClick={onClose} className="quiet-icon" aria-label="닫기"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
       </header>
       {repairing && <p role="status" className="px-3 py-2 text-xs text-[#e5d6a9] bg-[#29291f]">재료 분량·조리 문구 정리 중…</p>}
       {!editing && error && <div role="alert" className="px-3 py-2 text-xs text-rose-600">{error} <button onClick={() => setRepairAttempt(value => value + 1)} className="underline">다시 시도</button></div>}
@@ -114,21 +106,21 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
         <button type="submit" className="w-full bg-[#e4e6e0] text-[#17191a] rounded-xl py-3 font-bold">저장</button>
         {recipe.id && <button type="button" onClick={() => { setDraft({ ...recipe }); setIngredientInput(ingredientsWithStepAmounts(recipe).join('\n')); setStepInput((recipe.steps || []).join('\n')); setEditing(false); }} className="w-full py-2 text-sm">취소</button>}
       </form> : <>
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 pt-2">
-          <article className="space-y-2 pb-2" style={{ fontSize }}>
-            <h1 className="font-black leading-tight break-words" style={{ fontSize: fontSize + 4 }}>{draft.dishName}</h1>
-            <div aria-label="재료와 분량" className="flex flex-wrap gap-x-3 gap-y-1 leading-[1.5] border-y border-[#3e4034] py-2">{[...(draft.ingredients || []), ...(draft.extraNeeded || [])].filter((item, index, all) => all.indexOf(item) === index).map((item, index) => <span key={index}><Quantity text={item} /></span>)}</div>
-            <ol aria-label="조리 순서" className="space-y-2 leading-[1.5]">{(draft.steps || []).map((text, index) => <li key={index} className="flex gap-2"><span className="text-[#d9c58d] font-black shrink-0">{index + 1}</span><Step text={text} /></li>)}</ol>
+        <div className="recipe-detail-content flex-1 min-h-0 overflow-y-auto">
+          <article className="recipe-detail-article" style={{ fontSize }}>
+            <h1 className="recipe-detail-title">{draft.dishName}</h1>
+            <h2 className="recipe-section-title">재료</h2><div aria-label="재료와 분량" className="recipe-ingredients">{[...(draft.ingredients || []), ...(draft.extraNeeded || [])].filter((item, index, all) => all.indexOf(item) === index).map((item, index) => <span key={index}><Quantity text={item} /></span>)}</div>
+            <h2 className="recipe-section-title">조리 순서</h2><ol aria-label="조리 순서" className="recipe-steps">{(draft.steps || []).map((text, index) => <li key={index} className="flex gap-2"><span className="recipe-step-number">{index + 1}</span><Step text={text} /></li>)}</ol>
             {youtubeUrl(draft.youtubeUrl) && <a className="inline-block text-xs text-red-700 underline" href={youtubeUrl(draft.youtubeUrl)} target="_blank" rel="noopener noreferrer">유튜브 영상 ↗</a>}
           </article>
-        </div>
-        <details className="mx-3 mb-1 border-t border-[#35393b] pt-1 shrink-0">
+        <details className="recipe-detail-notes">
           <summary className="cursor-pointer text-xs text-[#979d97] py-1">내 메모{draft.notes ? ' · 있음' : ' 추가'}</summary>
           <textarea aria-label="내 메모" className={`${fieldClass} mt-2`} style={{ fontSize }} rows={2} value={draft.notes || ''} onChange={e => update('notes', e.target.value)} placeholder="내가 적는 요리 메모" />
           <button disabled={repairing} onClick={async () => {
             if (await onSave(draft, { keepOpen: true, notesOnly: true, expectedNotes: notesBase.current })) notesBase.current = draft.notes || '';
           }} className="text-xs py-1 px-2 rounded-lg bg-[#e4e6e0] text-[#17191a]">메모 저장</button>
         </details>
+        </div>
       </>}
     </div>
   </div>;

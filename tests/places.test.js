@@ -46,3 +46,26 @@ test('Preview returns Naver image metadata without requiring client-side cross-o
   assert.equal(cityDistrict('서울특별시 강남구 테헤란로 12'), '서울특별시 강남구');
   assert.equal(cityDistrict(''), '');
 });
+
+test('Photo extraction ignores the map app icon and uses the first real place image', async () => {
+ const { placePhoto } = await import('../netlify/functions/place-preview.mjs');
+ assert.equal(placePhoto('<meta property="og:image" content="https://ssl.pstatic.net/static/maps/assets/images/og-map-400x200.png">'), '');
+ assert.equal(placePhoto('<meta property="og:image" content="https://ssl.pstatic.net/static/maps/assets/images/og-map-400x200.png"><img src="https://ldb-phinf.pstatic.net/first.jpg"><img src="https://ldb-phinf.pstatic.net/second.jpg">'), 'https://ldb-phinf.pstatic.net/first.jpg');
+ assert.equal(placePhoto('<meta property="og:image" content="https://pstatic.net.evil.example/first.jpg">'), '');
+});
+
+test('Place metadata follows the public place page for actual photos', async () => {
+ const original = globalThis.fetch;
+ const calls = [];
+ globalThis.fetch = async url => {
+  calls.push(url);
+  if (calls.length === 1) return new Response('', {status:302,headers:{location:'https://map.naver.com/p/entry/place/1308629361'}});
+  if (calls.length === 2) return new Response('<meta property="og:image" content="https://ssl.pstatic.net/static/maps/assets/images/og-map-400x200.png">');
+  return new Response('<img src="https://ldb-phinf.pstatic.net/pizza.jpg">');
+ };
+ try {
+  const result = await handler({queryStringParameters:{url:requestedPlace.mapUrl}});
+  assert.equal(JSON.parse(result.body).imageUrl, 'https://ldb-phinf.pstatic.net/pizza.jpg');
+  assert.equal(calls[2], 'https://pcmap.place.naver.com/place/1308629361/home');
+ } finally {globalThis.fetch = original;}
+});

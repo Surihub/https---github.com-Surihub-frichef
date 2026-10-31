@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
+import TagEditor from './TagEditor';
+import { normalizeTags } from '../services/tags.js';
 import LinkIcon from './LinkIcon';
 import './savedLinks.css';
 import { youtubeUrl } from './recipeFormat';
@@ -12,9 +14,27 @@ function VideoImage({ url, title }) {
   return id && !failed ? <img src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt={title} loading="lazy" onError={() => setFailed(true)} className="aspect-video w-full object-cover" /> : <div className="aspect-video bg-gradient-to-br from-[#252b2a] to-[#191c1e]" />;
 }
 
-function LinkEditor({ item, mode, type, onClose, onSave }) {
+function PlaceImage({ item }) {
+  const [image, setImage] = useState(item.imageUrl || '');
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setImage(item.imageUrl || ''); setFailed(false);
+    if (!item.imageUrl || item.imageUrl.includes('og-map-')) {
+      fetch(`/.netlify/functions/place-preview?url=${encodeURIComponent(item.mapUrl)}`, { signal: AbortSignal.timeout(12000) })
+        .then(response => response.ok ? response.json() : null)
+        .then(preview => { if (active && preview?.imageUrl) setImage(preview.imageUrl); }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [item.mapUrl, item.imageUrl]);
+  let safe = false;
+  try { const url = new URL(image); safe = url.protocol === 'https:' && (url.hostname.endsWith('.pstatic.net') || url.hostname.endsWith('.naver.net')) && !image.includes('og-map-'); } catch {}
+  return safe && !failed ? <img className="place-photo" src={image} alt={`${item.dishName} 대표 사진`} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : null;
+}
+
+function LinkEditor({ item, mode, type, onClose, onSave, existingTags }) {
   const place = type === 'place';
-  const [draft, setDraft] = useState(() => ({ dishName: '', notes: '', address: '', mapUrl: '', youtubeUrl: '', ...item }));
+  const [draft, setDraft] = useState(() => ({ dishName: '', notes: '', address: '', mapUrl: '', youtubeUrl: '', tags: [], ...item }));
   const [linkText, setLinkText] = useState(item ? place ? item.mapUrl : item.youtubeUrl : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -51,7 +71,19 @@ function LinkEditor({ item, mode, type, onClose, onSave }) {
     setBusy(true); setError('');
     try {
       const options = mode === 'notes' ? { notesOnly: true, expectedNotes: base.current.notes || '' } : base.current ? { expectedRecipe: base.current } : {};
-      const value = mode === 'notes' ? { ...base.current, notes: draft.notes } : { ...draft, type, dishName: draft.dishName.trim(), ...(place ? { mapUrl: link, address: cityDistrict(draft.address) } : { youtubeUrl: link }) };
+      let value = mode === 'notes' ? { ...base.current, notes: draft.notes } : { ...draft, type, dishName: draft.dishName.trim(), ...(place ? { mapUrl: link, address: cityDistrict(draft.address) } : { youtubeUrl: link }) };
+      if (mode !== 'notes') {
+        value.tags = normalizeTags(draft.tags);
+        if (place && (!value.imageUrl || base.current?.mapUrl !== link)) {
+          try {
+            const response = await fetch(`/.netlify/functions/place-preview?url=${encodeURIComponent(link)}`, { signal: AbortSignal.timeout(12000) });
+            if (response.ok) {
+              const preview = await response.json();
+              if (preview.imageUrl) value.imageUrl = preview.imageUrl;
+            }
+          } catch { /* A photo failure must not block saving a link. */ }
+        }
+      }
       if (await onSave(value, options)) onClose();
       else setError('저장하지 못했습니다. 최신 내용과 연결 상태를 확인해주세요.');
     } catch { setError('저장하지 못했습니다. 다시 시도해주세요.'); }
@@ -66,6 +98,10 @@ function LinkEditor({ item, mode, type, onClose, onSave }) {
           <label className="block space-y-1 text-sm"><span>이름</span><input required className={field} value={draft.dishName} onChange={event => setDraft(previous => ({ ...previous, dishName: event.target.value }))} /></label>
           {place && cityDistrict(draft.address) && <p className="text-sm text-slate-500">{cityDistrict(draft.address)}</p>}
         </>}
+        {mode !== 'notes' && <>
+          <TagEditor tags={draft.tags} suggestions={existingTags} onChange={update => setDraft(previous => ({ ...previous, tags: typeof update === 'function' ? update(previous.tags) : update }))} />
+          {place && item && <label className="block space-y-1 text-sm"><span>사진 링크 · 선택</span><input type="url" className={field} value={draft.imageUrl || ''} onChange={event => setDraft(previous => ({ ...previous, imageUrl: event.target.value }))} placeholder="대표 사진 주소" /></label>}
+        </>}
         <label className="block space-y-1 text-sm"><span>메모</span><textarea rows={4} className={field} value={draft.notes} onChange={event => setDraft(previous => ({ ...previous, notes: event.target.value }))} placeholder="기억해둘 내용을 적어주세요." /></label>
         {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
         <button disabled={busy} className={`w-full rounded-xl py-3 font-bold text-white disabled:opacity-40 bg-[#e4e6e0] !text-[#17191a]`}>{busy ? '저장 중…' : '저장'}</button>
@@ -76,12 +112,17 @@ function LinkEditor({ item, mode, type, onClose, onSave }) {
 
 export default function SavedLinks({ items, type, onSave, onDelete }) {
   const place = type === 'place';
+  const [tagFilter, setTagFilter] = useState('');
+  const existingTags = normalizeTags(items.flatMap(item => item.tags || []));
+  const activeFilter = existingTags.includes(tagFilter) ? tagFilter : '';
+  const visibleItems = activeFilter ? items.filter(item => normalizeTags(item.tags).includes(activeFilter)) : items;
   const [editor, setEditor] = useState(null);
   const close = React.useCallback(() => setEditor(null), []);
   return <section className="link-collection" data-kind={type}>
     <header><div className="link-collection-heading"><h2>{place ? '갈 곳' : '유튜브 레시피'}</h2><span className="link-collection-count">{String(items.length).padStart(2, '0')}</span></div></header>
     {!items.length && <p className="text-sm text-slate-400 text-center py-10">저장한 링크가 없습니다. + 버튼으로 추가해주세요.</p>}
-    <div className="link-list">{items.map(item => {
+    {existingTags.length > 0 && <div className="tag-options tag-filters" aria-label="태그 필터"><button className={`tag-token ${!activeFilter ? 'is-selected' : ''}`} aria-pressed={!activeFilter} onClick={() => setTagFilter('')}>전체</button>{existingTags.map(tag => <button key={tag} className={`tag-token ${activeFilter === tag ? 'is-selected' : ''}`} aria-pressed={activeFilter === tag} onClick={() => setTagFilter(activeFilter === tag ? '' : tag)}>#{tag}</button>)}</div>}
+    <div className="link-list">{visibleItems.map(item => {
       const link = place ? naverMapUrl(item.mapUrl) : youtubeUrl(item.youtubeUrl);
       return <article key={item.id} className="link-card">
         <a href={link || undefined} target="_blank" rel="noopener noreferrer" aria-label={`${item.dishName} 링크 열기`} className="link-card-hit"><span className="sr-only">{item.dishName}</span></a>
@@ -89,10 +130,12 @@ export default function SavedLinks({ items, type, onSave, onDelete }) {
           <button type="button" aria-label={`${item.dishName} 수정`} title="수정" onClick={() => setEditor({ item, mode: 'edit' })} className="link-card-tool"><LinkIcon name="edit" /></button>
           <button type="button" aria-label={`${item.dishName} 삭제`} title="삭제" onClick={() => { if (window.confirm('이 링크를 삭제하시겠습니까?')) onDelete(item.id); }} className="link-card-tool is-delete"><LinkIcon name="trash" /></button>
         </div>
+        {place && <PlaceImage item={item} />}
         {!place && <VideoImage url={item.youtubeUrl} title={item.dishName} />}
         <div className={`link-card-body ${place ? 'is-place' : ''}`}>
           <div><div className="link-card-title"><h3>{item.dishName}</h3></div>
           {place && cityDistrict(item.address) && <p className="link-card-address">{cityDistrict(item.address)}</p>}</div>
+          {normalizeTags(item.tags).length > 0 && <div className="tag-options link-item-tags">{normalizeTags(item.tags).map(tag => <button type="button" key={tag} className="inline-tag" onClick={() => setTagFilter(tag)}>#{tag}</button>)}</div>}
           <button type="button" aria-label={`${item.dishName} 메모 수정`} onClick={() => setEditor({ item, mode: 'notes' })} className="link-card-note">
             <LinkIcon name="note" className="link-note-icon" />
             <span className={`link-card-note-text ${item.notes ? '' : 'is-empty'}`}>{item.notes || '메모를 남겨보세요'}</span>
@@ -101,6 +144,6 @@ export default function SavedLinks({ items, type, onSave, onDelete }) {
       </article>;
     })}</div>
     <button type="button" aria-label={place ? '갈 곳 링크 추가' : '유튜브 레시피 링크 추가'} onClick={() => setEditor({ item: null, mode: 'add' })} className={`fixed z-40 w-14 h-14 rounded-full text-white shadow-lg flex items-center justify-center link-fab`} style={{ right: 'max(1.25rem, calc((100vw - 32rem) / 2 + 1.25rem))', bottom: 'calc(6.5rem + env(safe-area-inset-bottom))' }}><Plus className="w-7 h-7" /></button>
-    {editor && <LinkEditor item={editor.item} mode={editor.mode} type={type} onClose={close} onSave={onSave} />}
+    {editor && <LinkEditor item={editor.item} mode={editor.mode} type={type} onClose={close} onSave={onSave} existingTags={existingTags} />}
   </section>;
 }

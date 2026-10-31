@@ -357,8 +357,8 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6FB] pb-10 max-w-lg mx-auto shadow-2xl shadow-slate-200">
-      <header className="fixed top-0 left-0 right-0 z-40 bg-[#F4F6FB]/95 backdrop-blur-md border-b border-white/60 px-4 py-3">
+    <div className="app-paper min-h-screen pb-10 max-w-lg mx-auto shadow-2xl shadow-slate-200">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-[#faf8f2]/95 backdrop-blur-md border-b border-white/60 px-4 py-3">
         <div className="max-w-lg mx-auto flex justify-between items-center gap-3">
           <div className="flex items-center gap-2.5">
             <div className="bg-slate-900 p-2 rounded-xl shadow-lg shadow-slate-200">

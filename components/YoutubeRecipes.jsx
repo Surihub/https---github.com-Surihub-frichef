@@ -16,6 +16,13 @@ function VideoDetail({ recipe, onClose, onSave, onDelete }) {
   const [saved, setSaved] = useState(false);
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
+  const notesBase = useRef(recipe.notes || '');
+  useEffect(() => {
+    const baseline = notesBase.current;
+    setNotes(previous => previous === baseline ? recipe.notes || '' : previous);
+    if (notes === baseline || notes === recipe.notes) notesBase.current = recipe.notes || '';
+    setSaved(false);
+  }, [recipe]);
   useEffect(() => {
     const previousFocus = document.activeElement;
     const oldOverflow = document.body.style.overflow;
@@ -47,7 +54,7 @@ function VideoDetail({ recipe, onClose, onSave, onDelete }) {
         <div className="p-4 space-y-3">
           {link && <a href={link} target="_blank" rel="noopener noreferrer" className="block text-center rounded-xl py-3 bg-red-50 text-red-700 text-sm font-bold">유튜브에서 보기 ↗</a>}
           <label className="block space-y-2"><span className="text-sm font-bold">내 메모</span><textarea value={notes} onChange={event => { setNotes(event.target.value); setSaved(false); }} rows={5} placeholder="재료 분량, 불 조절, 다음에 바꿀 점" className="w-full rounded-xl border border-slate-200 p-3 text-base" /></label>
-          <div className="flex items-center gap-3"><button onClick={async () => { if (await onSave({ ...recipe, notes })) setSaved(true); }} className="flex-1 rounded-xl py-3 bg-slate-900 text-white text-sm font-bold">메모 저장</button><button onClick={() => { if (window.confirm('영상 삭제?')) { onDelete(recipe.id); onClose(); } }} className="text-sm text-rose-600 px-3 py-3">삭제</button></div>
+          <div className="flex items-center gap-3"><button onClick={async () => { if (await onSave({ ...recipe, notes }, { notesOnly: true, expectedNotes: notesBase.current })) { notesBase.current = notes; setSaved(true); } }} className="flex-1 rounded-xl py-3 bg-slate-900 text-white text-sm font-bold">메모 저장</button><button onClick={() => { if (window.confirm('영상 삭제?')) { onDelete(recipe.id); onClose(); } }} className="text-sm text-rose-600 px-3 py-3">삭제</button></div>
           <p role="status" className="text-xs text-slate-500 min-h-4">{saved ? '메모 저장됨' : notes !== (recipe.notes || '') ? '저장 전 변경사항 있음' : ''}</p>
         </div>
       </div>

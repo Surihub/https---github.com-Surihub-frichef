@@ -1,79 +1,135 @@
-import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, onSnapshot, query, runTransaction, setDoc, where } from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
+import { collection, doc, onSnapshot, query, runTransaction, setDoc, where } from 'firebase/firestore';
 import { db } from '../src/services/firebaseClient';
+import { mergeKitchenItems, sharedWorkspaceId } from '../services/sharedKitchen.js';
 
 export default function useSharedKitchen(user, setIngredients, setRecipes) {
   const [workspaceId, setWorkspaceId] = useState(null);
-  const [invitations, setInvitations] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
-  const [sharingError, setSharingError] = useState('');
-  const [switchVersion, setSwitchVersion] = useState(0);
+  const connection = useRef(null);
 
   useEffect(() => {
-    setWorkspaceId(null); setInvitations([]); setMembers([]); setReady(false); setError(null); setSharingError('');
+    setWorkspaceId(null); setMembers([]); setReady(false); setError(null);
+    setIngredients([]); setRecipes([]);
+    connection.current = null;
     if (!user) { setLoading(false); return; }
-    let active = true;
     setLoading(true);
+    let active = true;
+    let ownData = null;
+    let invitations = null;
+    let selectedId = null;
+    let generation = 0;
+    let unsubscribeWorkspace = () => {};
+    const ownRef = doc(db, 'users', user.uid);
+    const fail = message => {
+      if (!active) return;
+      generation += 1;
+      selectedId = null;
+      unsubscribeWorkspace();
+      connection.current = null;
+      setReady(false); setLoading(false); setError(message);
+      setIngredients([]); setRecipes([]);
+    };
+    const connect = async () => {
+      if (!active || !ownData || invitations === null) return;
+      const id = sharedWorkspaceId(user.uid, ownData.sharedWith, invitations);
+      if (id === selectedId) return;
+      selectedId = id;
+      const version = ++generation;
+      unsubscribeWorkspace();
+      connection.current = null;
+      setWorkspaceId(id); setReady(false); setLoading(true); setError(null);
+      setIngredients([]); setRecipes([]);
+      try {
+        if (id !== user.uid) {
+          // Moving data atomically prevents deleted family recipes from being
+          // imported again from a stale personal copy on the next login.
+          await runTransaction(db, async transaction => {
+            const sharedRef = doc(db, 'users', id);
+            const shared = await transaction.get(sharedRef);
+            const own = await transaction.get(ownRef);
+            if (!active || version !== generation) throw new Error('연결 변경됨');
+            if (!shared.exists() || !own.exists()) throw new Error('레시피함 없음');
+            const source = own.data();
+            if (!source.recipes?.length && !source.ingredients?.length) return;
+            transaction.update(sharedRef, {
+              recipes: mergeKitchenItems(shared.data().recipes, source.recipes, user.uid),
+              ingredients: mergeKitchenItems(shared.data().ingredients, source.ingredients, user.uid),
+            });
+            transaction.update(ownRef, { recipes: [], ingredients: [] });
+          });
+        }
+        if (!active || version !== generation) return;
+        unsubscribeWorkspace = onSnapshot(doc(db, 'users', id), snapshot => {
+          if (!active || version !== generation) return;
+          if (!snapshot.exists()) { fail('가족 레시피함을 찾을 수 없습니다.'); return; }
+          const data = snapshot.data();
+          setIngredients(data.ingredients || []);
+          setRecipes(data.recipes || []);
+          setMembers(data.sharedWith || []);
+          if (connection.current?.uid !== user.uid || connection.current.id !== id) connection.current = { uid: user.uid, id };
+          setReady(true); setLoading(false); setError(null);
+        }, () => {
+          if (active && version === generation) fail('가족 레시피함 연결 실패 · 공유 권한과 연결 상태를 확인해주세요.');
+        });
+      } catch {
+        if (active && version === generation) fail('가족 레시피 통합 실패 · 새로고침 후 다시 시도해주세요.');
+      }
+    };
+
+    let unsubscribeOwn = () => {};
+    let unsubscribeInvitations = () => {};
     const initialize = async () => {
       try {
-        const ownRef = doc(db, 'users', user.uid);
-        const own = await getDoc(ownRef);
+        await runTransaction(db, async transaction => {
+          const own = await transaction.get(ownRef);
+          if (!own.exists()) transaction.set(ownRef, { recipes: [], ingredients: [], sharedWith: [] });
+        });
         if (!active) return;
-        if (!own.exists()) await setDoc(ownRef, { recipes: [], ingredients: [], sharedWith: [] });
-        if (active) setWorkspaceId(user.uid);
+        unsubscribeOwn = onSnapshot(ownRef, snapshot => {
+          if (!active) return;
+          if (!snapshot.exists()) { fail('레시피함을 찾을 수 없습니다.'); return; }
+          ownData = snapshot.data();
+          connect();
+        }, () => { ownData = null; fail('레시피함 연결 실패 · 새로고침 후 다시 시도해주세요.'); });
+        const invited = query(collection(db, 'users'), where('sharedWith', 'array-contains', user.email.toLowerCase()));
+        unsubscribeInvitations = onSnapshot(invited, snapshot => {
+          if (!active) return;
+          invitations = snapshot.docs.filter(item => item.id !== user.uid).map(item => item.id);
+          connect();
+        }, () => { invitations = null; fail('가족 공유 연결 실패 · Firestore 공유 규칙과 이메일 인증을 확인해주세요.'); });
       } catch {
-        if (active) { setError('레시피함 연결 실패 · 새로고침 후 다시 시도'); setLoading(false); }
+        fail('레시피함 연결 실패 · 새로고침 후 다시 시도해주세요.');
       }
     };
     initialize();
-    return () => { active = false; };
-  }, [user]);
+    return () => {
+      active = false; generation += 1;
+      connection.current = null;
+      unsubscribeOwn(); unsubscribeInvitations(); unsubscribeWorkspace();
+    };
+  }, [user, setIngredients, setRecipes]);
 
-  useEffect(() => {
-    if (!user?.email) return;
-    const invited = query(collection(db, 'users'), where('sharedWith', 'array-contains', user.email.toLowerCase()));
-    return onSnapshot(invited, snapshot => {
-      setInvitations(snapshot.docs.filter(item => item.id !== user.uid).map(item => ({ id: item.id })));
-      setSharingError('');
-    }, () => setSharingError('공유 기능 연결 실패 · Firestore 공유 규칙 적용 필요'));
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || !workspaceId) return;
-    setLoading(true); setReady(false); setError(null);
-    return onSnapshot(doc(db, 'users', workspaceId), snapshot => {
-      if (!snapshot.exists()) { setError('레시피함을 찾을 수 없음'); setLoading(false); return; }
-      const data = snapshot.data();
-      setIngredients(previous => JSON.stringify(previous) === JSON.stringify(data.ingredients || []) ? previous : data.ingredients || []);
-      setRecipes(previous => JSON.stringify(previous) === JSON.stringify(data.recipes || []) ? previous : data.recipes || []);
-      setMembers(data.sharedWith || []);
-      setReady(true); setLoading(false); setError(null);
-    }, () => { setReady(false); setLoading(false); setError('레시피함 접근 실패 · 공유 권한 또는 연결 상태 확인'); });
-  }, [user, workspaceId, switchVersion, setIngredients, setRecipes]);
-
-  const selectWorkspace = id => {
-    setReady(false); setLoading(true); setWorkspaceId(id); setSwitchVersion(value => value + 1);
-  };
   const mutateField = async (field, transform) => {
-    if (!user || !workspaceId || !ready || loading) throw new Error('레시피함 연결 대기 중');
+    const current = connection.current;
+    if (!user || current?.uid !== user.uid) throw new Error('레시피함 연결 대기 중');
     await runTransaction(db, async transaction => {
-      const ref = doc(db, 'users', workspaceId);
+      const ref = doc(db, 'users', current.id);
       const snapshot = await transaction.get(ref);
+      if (connection.current !== current) throw new Error('레시피함 연결 변경됨');
       if (!snapshot.exists()) throw new Error('레시피함 없음');
       transaction.update(ref, { [field]: transform(snapshot.data()[field] || []) });
     });
   };
-  const mutateRecipes = transform => mutateField('recipes', transform);
-  const mutateIngredients = transform => mutateField('ingredients', transform);
   const invite = async email => {
     const normalized = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error('구글 계정 이메일 확인');
-    if (!user || workspaceId !== user.uid || !ready) throw new Error('내 레시피함에서 초대 가능');
-    if (normalized === user.email?.toLowerCase()) throw new Error('상대방 이메일 입력');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error('구글 계정 이메일을 확인해주세요.');
+    if (!user || connection.current?.uid !== user.uid || connection.current.id !== user.uid) throw new Error('가족 레시피함을 만든 계정에서 초대할 수 있습니다.');
+    if (normalized === user.email?.toLowerCase()) throw new Error('상대방 이메일을 입력해주세요.');
     await setDoc(doc(db, 'users', user.uid), { sharedWith: [normalized] }, { merge: true });
   };
-  return { workspaceId, invitations, members, loading, ready, error, sharingError, selectWorkspace, mutateRecipes, mutateIngredients, invite };
+  return { workspaceId, members, loading, ready, error, mutateRecipes: transform => mutateField('recipes', transform), mutateIngredients: transform => mutateField('ingredients', transform), invite };
 }

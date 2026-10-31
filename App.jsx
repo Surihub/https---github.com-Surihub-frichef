@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban, ClipboardList, Youtube, Settings } from 'lucide-react';
+import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban, ClipboardList, Youtube, Settings, MapPin } from 'lucide-react';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import useSharedKitchen from './hooks/useSharedKitchen';
 import SettingsDialog from './components/SettingsDialog';
 import YoutubeRecipes from './components/YoutubeRecipes';
+import SavedPlaces from './components/SavedPlaces';
 import RecipeWorkspace from './components/RecipeWorkspace';
 import { generateRecipe } from './services/geminiService';
 import { auth, googleProvider } from './src/services/firebaseClient';
@@ -194,17 +195,21 @@ const App = () => {
     };
     try {
       await kitchen.mutateRecipes(previous => {
-        if (options.expectedRecipe && JSON.stringify(previous.find(recipe => recipe.id === draft.id)) !== JSON.stringify(options.expectedRecipe)) throw new Error('다른 기기에서 수정된 레시피');
+        const current = previous.find(recipe => recipe.id === draft.id);
+        if (options.expectedRecipe && JSON.stringify(current) !== JSON.stringify(options.expectedRecipe)) throw new Error('다른 기기에서 수정된 레시피');
+        if (Object.hasOwn(options, 'expectedNotes') && (current?.notes || '') !== options.expectedNotes) throw new Error('다른 기기에서 수정된 레시피');
         if (draft.id && !previous.some(recipe => recipe.id === draft.id)) throw new Error('삭제된 레시피');
-        return draft.id ? previous.map(recipe => recipe.id === draft.id ? record : recipe) : [record, ...previous];
+        const saved = options.notesOnly ? { ...current, notes: draft.notes, updatedAt: record.updatedAt } : record;
+        return draft.id ? previous.map(recipe => recipe.id === draft.id ? saved : recipe) : [record, ...previous];
       });
-    } catch {
-      alert('저장 실패 · 연결 상태 확인 후 다시 저장');
+    } catch (error) {
+      alert(error.message === '다른 기기에서 수정된 레시피' ? '가족이 이 레시피를 수정했습니다. 최신 내용을 확인한 후 다시 저장해주세요.' : '저장 실패 · 연결 상태 확인 후 다시 저장');
       return false;
     }
-    setOpenRecipe(options.keepOpen ? record : null);
+    if (draft.type !== 'place') setOpenRecipe(options.keepOpen ? record : null);
     setRecipeResult(null);
-    if (draft.type !== 'youtube') setActiveTab('saved');
+    if (draft.type === 'place') setActiveTab('places');
+    else if (draft.type !== 'youtube') setActiveTab('saved');
     return true;
   };
 
@@ -254,8 +259,10 @@ const App = () => {
   const canGenerateRecipe = ingredientText.split(/[,，\n]/).some(value => value.trim()) && !isLoading;
   const displayName = user?.displayName || user?.email || '숩숩';
 
-  const myRecipes = savedRecipes.filter(recipe => recipe.type !== 'youtube');
+  const myRecipes = savedRecipes.filter(recipe => !['youtube', 'place'].includes(recipe.type));
+  const places = savedRecipes.filter(recipe => recipe.type === 'place');
   const videoRecipes = savedRecipes.filter(recipe => recipe.type === 'youtube');
+  const currentOpenRecipe = openRecipe?.id ? savedRecipes.find(recipe => recipe.id === openRecipe.id) : openRecipe;
   const renderSavedSection = () => (
     <section className="bg-white border border-slate-100 rounded-3xl p-4 space-y-4 shadow-sm">
       <div className="flex items-center justify-between px-1">
@@ -301,7 +308,7 @@ const App = () => {
       <button disabled={!canGenerateRecipe} onClick={handleGenerateRecipe} className="w-full bg-slate-900 text-white rounded-2xl p-4 font-bold disabled:opacity-40">{isLoading ? '레시피를 만들고 있습니다…' : 'AI 레시피 생성'}</button>
       {recipeResult?.error && <p role="alert" className="text-rose-600">{recipeResult.error} 다시 생성해주세요.</p>}
     </section>
-  ) : activeTab === 'youtube' ? <YoutubeRecipes recipes={videoRecipes} onSave={handleSaveRecipe} onDelete={handleDeleteSavedRecipe} /> : renderSavedSection();
+  ) : activeTab === 'places' ? <SavedPlaces places={places} onSave={handleSaveRecipe} onDelete={handleDeleteSavedRecipe} /> : activeTab === 'youtube' ? <YoutubeRecipes recipes={videoRecipes} onSave={handleSaveRecipe} onDelete={handleDeleteSavedRecipe} /> : renderSavedSection();
 
   if (!isAuthInitialized) {
     return (
@@ -372,11 +379,11 @@ const App = () => {
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <nav aria-label="주 메뉴" className="max-w-lg mx-auto grid grid-cols-3">
-          {[['saved', '내 레시피', ClipboardList], ['youtube', '유튜브 레시피', Youtube], ['recipe', '레시피 만들기', Sparkles]].map(([tab, title, Icon]) => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined} onClick={() => setActiveTab(tab)} className={`py-4 flex flex-col items-center gap-1 text-xs font-bold ${activeTab === tab ? 'text-slate-900' : 'text-slate-400'}`}><Icon className="w-5 h-5" />{title}</button>)}
+        <nav aria-label="주 메뉴" className="max-w-lg mx-auto grid grid-cols-4">
+          {[['saved', '내 레시피', ClipboardList], ['youtube', '유튜브 레시피', Youtube], ['places', '갈 곳', MapPin], ['recipe', '레시피 만들기', Sparkles]].map(([tab, title, Icon]) => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined} onClick={() => setActiveTab(tab)} className={`py-4 flex flex-col items-center gap-1 text-xs font-bold ${activeTab === tab ? 'text-slate-900' : 'text-slate-400'}`}><Icon className="w-5 h-5" />{title}</button>)}
         </nav>
       </footer>
-      {openRecipe && <RecipeWorkspace key={openRecipe.id || 'draft'} recipe={openRecipe} onClose={() => setOpenRecipe(null)} onSave={handleSaveRecipe} />}
+      {currentOpenRecipe && <RecipeWorkspace key={`${kitchen.workspaceId}:${currentOpenRecipe.id || 'draft'}`} recipe={currentOpenRecipe} onClose={() => setOpenRecipe(null)} onSave={handleSaveRecipe} />}
 
       {showSettings && <SettingsDialog user={user} kitchen={kitchen} onClose={() => setShowSettings(false)} onLogout={handleLogout} error={authError} />}
     </div>

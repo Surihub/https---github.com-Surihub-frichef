@@ -34,6 +34,22 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
   const repairRequest = useRef(null);
   const [repairing, setRepairing] = useState(needsRecipeRepair(recipe));
   const [repairAttempt, setRepairAttempt] = useState(0);
+  const editBase = useRef(recipe);
+  const notesBase = useRef(recipe.notes || '');
+  useEffect(() => {
+    if (editing || repairing) return;
+    const baseline = notesBase.current;
+    setDraft(previous => ({
+      ...recipe,
+      ingredients: ingredientsWithStepAmounts(recipe),
+      extraNeeded: [],
+      notes: (previous.notes || '') === baseline ? recipe.notes || '' : previous.notes,
+    }));
+    if ((draft.notes || '') === baseline || draft.notes === recipe.notes) notesBase.current = recipe.notes || '';
+    setIngredientInput(ingredientsWithStepAmounts(recipe).join('\n'));
+    setStepInput((recipe.steps || []).join('\n'));
+    editBase.current = recipe;
+  }, [recipe, editing, repairing]);
   useEffect(() => {
     if (!needsRecipeRepair(recipe)) return;
     let active = true;
@@ -79,7 +95,7 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
     const link = draft.youtubeUrl?.trim();
     if (!draft.dishName?.trim() || !draft.steps?.length) { setError('요리 이름과 조리 순서 확인'); return; }
     if (link && !youtubeUrl(link)) { setError('유효한 유튜브 영상 링크 입력'); return; }
-    onSave({ ...draft, dishName: draft.dishName.trim(), youtubeUrl: link ? youtubeUrl(link) : '' });
+    onSave({ ...draft, dishName: draft.dishName.trim(), youtubeUrl: link ? youtubeUrl(link) : '' }, { expectedRecipe: recipe.id ? editBase.current : undefined });
   };
   return <div role="dialog" aria-modal="true" aria-label="레시피 상세" className="fixed inset-0 z-50 bg-[#fffdf8]">
     <div className="mx-auto max-w-lg flex flex-col" style={{ height: '100dvh', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -109,7 +125,9 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
         <details className="mx-3 mb-1 border-t border-slate-200 pt-1 shrink-0">
           <summary className="cursor-pointer text-xs text-slate-500 py-1">내 메모{draft.notes ? ' · 있음' : ' 추가'}</summary>
           <textarea aria-label="내 메모" className={`${fieldClass} mt-2`} style={{ fontSize }} rows={2} value={draft.notes || ''} onChange={e => update('notes', e.target.value)} placeholder="내가 적는 요리 메모" />
-          <button disabled={repairing} onClick={() => onSave(draft, { keepOpen: true })} className="text-xs py-1 px-2 rounded-lg bg-slate-900 text-white">메모 저장</button>
+          <button disabled={repairing} onClick={async () => {
+            if (await onSave(draft, { keepOpen: true, notesOnly: true, expectedNotes: notesBase.current })) notesBase.current = draft.notes || '';
+          }} className="text-xs py-1 px-2 rounded-lg bg-slate-900 text-white">메모 저장</button>
         </details>
       </>}
     </div>

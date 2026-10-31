@@ -316,7 +316,7 @@ const App = () => {
         <div className="text-center space-y-3">
           <div className="flex items-center justify-center gap-3 text-2xl font-black">
             <ChefHat className="w-7 h-7" />
-            frichef
+            뭐먹지?
           </div>
           <p className="text-sm text-slate-200">주방을 불러오는 중입니다...</p>
         </div>
@@ -332,9 +332,9 @@ const App = () => {
             <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-white/10 text-xs font-bold tracking-[0.3em] uppercase text-amber-200">
               <ChefHat className="w-4 h-4" /> ai kitchen
             </div>
-            <h1 className="text-3xl font-black tracking-tight">frichef</h1>
+            <h1 className="text-3xl font-black tracking-tight">뭐먹지?</h1>
             <p className="text-sm text-slate-200 leading-relaxed">
-              냉장고 속 재료와 도구를 선택하면 frichef가 한국어 레시피를 만들어 드립니다.
+              냉장고 속 재료를 입력하면 한국어 레시피를 만들어 드립니다.
               Google 로그인 후 나만의 AI 셰프를 만나보세요.
             </p>
           </div>
@@ -365,7 +365,7 @@ const App = () => {
               <UtensilsCrossed className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tight text-slate-800">frichef</h1>
+              <h1 className="text-lg font-black tracking-tight text-slate-800">뭐먹지?</h1>
               <p className="text-[11px] text-slate-500">나만의 레시피 노트</p>
             </div>
           </div>
@@ -380,7 +380,7 @@ const App = () => {
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <nav aria-label="주 메뉴" className="max-w-lg mx-auto grid grid-cols-4">
-          {[['saved', '내 레시피', ClipboardList], ['youtube', '유튜브 레시피', Youtube], ['places', '갈 곳', MapPin], ['recipe', '레시피 만들기', Sparkles]].map(([tab, title, Icon]) => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined} onClick={() => setActiveTab(tab)} className={`py-4 flex flex-col items-center gap-1 text-xs font-bold ${activeTab === tab ? 'text-slate-900' : 'text-slate-400'}`}><Icon className="w-5 h-5" />{title}</button>)}
+          {[['saved', '내 레시피', ClipboardList], ['recipe', '레시피 만들기', Sparkles], ['youtube', '유튜브 레시피', Youtube], ['places', '갈 곳', MapPin]].map(([tab, title, Icon]) => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined} onClick={() => setActiveTab(tab)} className={`py-4 flex flex-col items-center gap-1 text-xs font-bold ${tab === 'places' ? `border-l border-emerald-200 ${activeTab === tab ? 'bg-emerald-100 text-emerald-900' : 'bg-emerald-50 text-emerald-700'}` : activeTab === tab ? 'bg-amber-100 text-amber-900' : 'bg-amber-50 text-amber-700'}`}><Icon className="w-5 h-5" />{title}</button>)}
         </nav>
       </footer>
       {currentOpenRecipe && <RecipeWorkspace key={`${kitchen.workspaceId}:${currentOpenRecipe.id || 'draft'}`} recipe={currentOpenRecipe} onClose={() => setOpenRecipe(null)} onSave={handleSaveRecipe} />}

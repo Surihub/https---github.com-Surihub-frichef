@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, X, ExternalLink } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { youtubeUrl } from './recipeFormat';
 import { cityDistrict, naverMapUrl, parseNaverShare } from '../services/placeFormat.js';
 
@@ -23,7 +23,7 @@ function LinkEditor({ item, mode, type, onClose, onSave }) {
     const previous = document.activeElement;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    root.current?.querySelector('button')?.focus();
+    root.current?.querySelector(mode === 'notes' ? 'textarea' : 'button')?.focus();
     const keydown = event => {
       if (event.key === 'Escape' && !busy) onClose();
       if (event.key !== 'Tab') return;
@@ -55,8 +55,8 @@ function LinkEditor({ item, mode, type, onClose, onSave }) {
     } catch { setError('저장하지 못했습니다. 다시 시도해주세요.'); }
     finally { setBusy(false); }
   };
-  return <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end sm:items-center justify-center" onClick={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section ref={root} role="dialog" aria-modal="true" aria-labelledby="link-editor-title" className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl p-5 max-h-[90dvh] overflow-y-auto" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+  return <div className={`fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex justify-center ${mode === 'notes' ? 'items-center p-4' : 'items-end sm:items-center'}`} onClick={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <section ref={root} role="dialog" aria-modal="true" aria-labelledby="link-editor-title" className={`w-full max-w-lg bg-white shadow-2xl p-5 max-h-[90dvh] overflow-y-auto ${mode === 'notes' ? 'rounded-3xl' : 'rounded-t-3xl sm:rounded-3xl'}`} style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
       <header className="flex items-center justify-between mb-4"><h2 id="link-editor-title" className="text-lg font-bold">{title}</h2><button type="button" disabled={busy} aria-label="닫기" onClick={onClose} className="p-2 rounded-full bg-slate-100"><X className="w-5 h-5" /></button></header>
       <form onSubmit={submit} className="space-y-4">
         {mode === 'notes' ? <p className="font-bold">{draft.dishName}</p> : <>
@@ -81,18 +81,20 @@ export default function SavedLinks({ items, type, onSave, onDelete }) {
     {!items.length && <p className="text-sm text-slate-400 text-center py-10">저장한 링크가 없습니다. + 버튼으로 추가해주세요.</p>}
     <div className="grid grid-cols-2 gap-3">{items.map(item => {
       const link = place ? naverMapUrl(item.mapUrl) : youtubeUrl(item.youtubeUrl);
-      return <article key={item.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white overflow-hidden flex flex-col">
-        {!place && <a href={link || undefined} target="_blank" rel="noopener noreferrer" aria-label={`${item.dishName} 링크 열기`}><VideoImage url={item.youtubeUrl} title={item.dishName} /></a>}
-        <div className="p-3 space-y-2 flex flex-col flex-1">
-          <h3 className="font-bold text-sm break-words">{item.dishName}</h3>
-          {place && cityDistrict(item.address) && <p className="text-xs text-slate-500">{cityDistrict(item.address)}</p>}
-          {item.notes && <p className="text-sm text-slate-600 whitespace-pre-wrap break-words line-clamp-3">{item.notes}</p>}
-          <a href={link || undefined} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 text-xs py-2 ${place ? 'text-emerald-800' : 'text-amber-800'}`}>링크 열기<ExternalLink className="w-3 h-3" /></a>
-          <div className="flex items-center justify-between gap-1 border-t pt-1 mt-auto text-xs text-slate-600">
-            <button aria-label={`${item.dishName} 수정`} onClick={() => setEditor({ item, mode: 'edit' })} className="py-2">수정</button>
-            <button aria-label={`${item.dishName} 삭제`} onClick={() => { if (window.confirm('이 링크를 삭제하시겠습니까?')) onDelete(item.id); }} className="py-2 text-rose-600">삭제</button>
-            <button aria-label={`${item.dishName} 메모`} onClick={() => setEditor({ item, mode: 'notes' })} className="py-2">메모</button>
-          </div>
+      return <article key={item.id} className={`group relative min-w-0 rounded-3xl border bg-white overflow-hidden flex flex-col shadow-sm transition-shadow hover:shadow-md ${place ? 'border-emerald-100' : 'border-amber-100'}`}>
+        <a href={link || undefined} target="_blank" rel="noopener noreferrer" aria-label={`${item.dishName} 링크 열기`} className="absolute inset-0 z-10 rounded-3xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-slate-600"><span className="sr-only">{item.dishName}</span></a>
+        <div className="absolute right-2 top-2 z-20 flex gap-1">
+          <button type="button" aria-label={`${item.dishName} 수정`} title="수정" onClick={() => setEditor({ item, mode: 'edit' })} className="w-9 h-9 flex items-center justify-center rounded-full bg-white/95 shadow-sm ring-1 ring-black/5 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-600"><span aria-hidden="true">✏️</span></button>
+          <button type="button" aria-label={`${item.dishName} 삭제`} title="삭제" onClick={() => { if (window.confirm('이 링크를 삭제하시겠습니까?')) onDelete(item.id); }} className="w-9 h-9 flex items-center justify-center rounded-full bg-white/95 shadow-sm ring-1 ring-black/5 hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-500"><span aria-hidden="true">🗑️</span></button>
+        </div>
+        {!place && <VideoImage url={item.youtubeUrl} title={item.dishName} />}
+        <div className={`p-3.5 flex flex-col flex-1 gap-3 ${place ? 'pt-14' : ''}`}>
+          <div className="space-y-1.5"><h3 className="font-bold text-base leading-snug tracking-tight break-words text-slate-800">{item.dishName}</h3>
+          {place && cityDistrict(item.address) && <p className="text-xs text-emerald-700">{cityDistrict(item.address)}</p>}</div>
+          <button type="button" aria-label={`${item.dishName} 메모 수정`} onClick={() => setEditor({ item, mode: 'notes' })} className={`relative z-20 mt-auto w-full text-left rounded-2xl border-l-[3px] p-3 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-600 ${place ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-950' : 'border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-950'}`}>
+            <span className={`block text-[10px] font-bold tracking-wide mb-1 ${place ? 'text-emerald-600' : 'text-amber-600'}`}>메모</span>
+            <span className={`block text-sm leading-relaxed whitespace-pre-wrap break-words ${item.notes ? 'font-semibold' : 'opacity-50'}`}>{item.notes || '눌러서 메모 남기기'}</span>
+          </button>
         </div>
       </article>;
     })}</div>

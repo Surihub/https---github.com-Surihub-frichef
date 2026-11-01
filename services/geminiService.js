@@ -156,3 +156,40 @@ export const generateRecipe = async (ingredients, tools) => {
     throw new Error("Failed to generate recipe. Please try again.");
   }
 };
+
+export const converseRecipe = async messages => {
+  if (!apiKey) throw new Error('Missing VITE_GEMINI_API_KEY');
+  const { conversationContents, conversationReply } = await import('./conversation.js');
+  const contents = conversationContents(messages);
+  if (!contents.length || contents[0].role !== 'user' || contents.at(-1).role !== 'user') throw new Error('Invalid conversation');
+  const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    systemInstruction: `당신은 '뭐먹지?'의 한국어 요리 대화 도우미입니다. 항상 자연스러운 존댓말로 1~3문장만 답하세요. 마크다운, 코드 블록, 장황한 인사 금지.
+전체 대화를 기억하고 사용자가 말한 재료, 싫어하는 메뉴, 알레르기, 조리 시간, 맛과 조리도구 조건을 다음 추천에 모두 반영하세요. 거절한 메뉴는 사용자가 다시 원하지 않는 한 반복하지 마세요. 재료가 없으면 가장 필요한 질문 하나만 하세요. 재료가 있으면 바로 1~2개 메뉴를 제안하고 취향을 좁히세요. 없는 주요 재료를 있는 것처럼 가정하지 마세요.
+사용자가 메뉴를 골랐거나 레시피·만드는 방법을 원하면 recipe 필드로 완성 레시피를 제공하세요. 단순한 메뉴 제안·질문에는 recipe를 생략하세요. reply에는 대화만, 자세한 조리법은 recipe에만 넣으세요.
+recipe는 1인분 기준 모든 재료와 조미료의 구체적 분량(name, quantity)을 포함하세요. 기존 대화에서 사용자가 명시한 분량과 인분은 우선하세요.
+조리 순서는 4~6개의 짧은 구절로 작성하세요. '양파 썰기', '3분 볶기'처럼 작성하고 합니다/습니다/줍니다/주세요 금지. 재료 분량은 ingredients에만 넣고 steps에 반복하지 마세요. 조리 시간과 온도는 유지하세요. 가열 단계 끝에는 [[약불]], [[중불]], [[강불]] 표시. 팬 예열·도구 설명 같은 뻔한 준비 단계는 생략하세요.
+반드시 지정된 JSON 구조로만 출력하세요.`,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          reply: { type: SchemaType.STRING, description: 'Short conversational Korean response' },
+          recipe: {
+            type: SchemaType.OBJECT,
+            properties: {
+              dishName: { type: SchemaType.STRING }, ingredients: ingredientSchema,
+              steps: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+              time: { type: SchemaType.STRING }, difficulty: { type: SchemaType.STRING }, proTip: { type: SchemaType.STRING },
+            },
+            required: ['dishName', 'ingredients', 'steps'],
+          },
+        },
+        required: ['reply'],
+      },
+    },
+  });
+  const response = await model.generateContent({ contents }, { timeout: 45000 });
+  return conversationReply(response.response.text());
+};

@@ -24,6 +24,7 @@ export const compactStep = value => String(value)
 
 const amountSource = '(?:\\d+(?:[./]\\d+)?(?:\\s*[~～]\\s*\\d+)?|반)\\s*(?:큰술|작은술|공기|꼬집|스푼|컵|개|장|쪽|대|줌|봉|팩|인분|ml|mL|kg|g|L)|약간|적당량';
 export const hasIngredientAmount = value => new RegExp(amountSource).test(value);
+export const withoutIngredientAmounts = value => String(value).replace(new RegExp(amountSource, 'g'), '').replace(/[ \t]{2,}/g, ' ').trim();
 export const ingredientsWithStepAmounts = recipe => {
   const steps = (recipe.steps || []).join(' ');
   return [...new Set([...(recipe.ingredients || []), ...(recipe.extraNeeded || [])])].map(item => {

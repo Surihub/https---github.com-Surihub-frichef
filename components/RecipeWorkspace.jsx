@@ -14,9 +14,9 @@ function Step({ text }) {
   return <p className="min-w-0 break-words">{body.replace(/\[\[\s*\]\]/g, '')}{[...new Set(heat)].map(value => <strong key={value} className="inline-block align-baseline ml-1 px-1.5 rounded bg-[#3e3026] text-[#e7b58c] text-[0.85em] whitespace-nowrap">{value.replace(/\s/g, '')}</strong>)}</p>;
 }
 
-export default function RecipeWorkspace({ recipe, onClose, onSave }) {
+export default function RecipeWorkspace({ recipe, onClose, onSave, startInPreview = false }) {
   const [draft, setDraft] = useState(() => ({ ...recipe, ingredients: ingredientsWithStepAmounts(recipe), extraNeeded: [] }));
-  const [editing, setEditing] = useState(!recipe.id);
+  const [editing, setEditing] = useState(!recipe.id && !startInPreview);
   const [error, setError] = useState('');
   const fontSize = 17;
   const [filling, setFilling] = useState(false);
@@ -112,6 +112,7 @@ export default function RecipeWorkspace({ recipe, onClose, onSave }) {
             <h2 className="recipe-section-title">재료</h2><div aria-label="재료와 분량" className="recipe-ingredients">{[...(draft.ingredients || []), ...(draft.extraNeeded || [])].filter((item, index, all) => all.indexOf(item) === index).map((item, index) => <span key={index}><Quantity text={item} /></span>)}</div>
             <h2 className="recipe-section-title">조리 순서</h2><ol aria-label="조리 순서" className="recipe-steps">{(draft.steps || []).map((text, index) => <li key={index} className="flex gap-2"><span className="recipe-step-number">{index + 1}</span><Step text={text} /></li>)}</ol>
             {youtubeUrl(draft.youtubeUrl) && <a className="inline-block text-xs text-red-700 underline" href={youtubeUrl(draft.youtubeUrl)} target="_blank" rel="noopener noreferrer">유튜브 영상 ↗</a>}
+            {!recipe.id && <button type="button" onClick={() => onSave(draft)} className="mt-6 w-full py-3 rounded-xl bg-[#f5d85b] text-[#17191a] text-sm font-bold">내 레시피에 저장</button>}
           </article>
         <details className="recipe-detail-notes">
           <summary className="cursor-pointer text-xs text-[#979d97] py-1">내 메모{draft.notes ? ' · 있음' : ' 추가'}</summary>

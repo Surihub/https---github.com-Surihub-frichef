@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UtensilsCrossed, Flame, Soup, Wind, Microwave, ChefHat, Sparkles, Ban, ClipboardList, Youtube, Settings, MapPin } from 'lucide-react';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import useRecipeConversation from './hooks/useRecipeConversation';
+import RecipeChat from './components/RecipeChat';
 import useSharedKitchen from './hooks/useSharedKitchen';
 import LinkIcon from './components/LinkIcon';
 import './components/theme.css';
@@ -95,6 +97,8 @@ const App = () => {
     }));
   });
 
+  const conversation = useRecipeConversation(user?.uid);
+  const [recipeMode, setRecipeMode] = useState('quick');
   const [recipeResult, setRecipeResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const kitchen = useSharedKitchen(user, setIngredients, setSavedRecipes);
@@ -104,6 +108,7 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('saved');
   const [ingredientText, setIngredientText] = useState('');
   const [openRecipe, setOpenRecipe] = useState(null);
+  const [openRecipePreview, setOpenRecipePreview] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [showSettings, setShowSettings] = useState(false);
 
@@ -175,6 +180,7 @@ const App = () => {
     }
 
     setActiveTab('recipe');
+    setOpenRecipePreview(false);
     setIsLoading(true);
     setRecipeResult(null);
 
@@ -284,10 +290,13 @@ const App = () => {
 
   const renderTabContent = () => activeTab === 'recipe' ? (
     <section className="space-y-5">
-      <div><h2 className="text-2xl font-black mt-2">오늘은 무엇을 만들까요?</h2><p className="text-sm text-[#979d97] mt-2">재료를 입력하고, 만들어진 레시피를 내 입맛에 맞게 수정해보세요.</p></div>
+      <div><h2 className="text-2xl font-black mt-2">오늘은 무엇을 만들까요?</h2>{recipeMode === 'quick' && <p className="text-sm text-[#979d97] mt-2">재료를 입력하고, 만들어진 레시피를 내 입맛에 맞게 수정해보세요.</p>}</div>
+      <div className="recipe-mode-tabs" role="group" aria-label="레시피 생성 방식"><button type="button" aria-pressed={recipeMode === 'quick'} onClick={() => setRecipeMode('quick')}>한 번에 만들기</button><button type="button" aria-pressed={recipeMode === 'chat'} onClick={() => setRecipeMode('chat')}>대화하며 고르기</button></div>
+      {recipeMode === 'chat' ? <RecipeChat conversation={conversation} onOpenRecipe={recipe => { setOpenRecipePreview(true); setOpenRecipe(recipe); }} /> : <>
       <label className="block space-y-2"><span className="font-bold">사용할 재료</span><textarea value={ingredientText} onChange={e => setIngredientText(e.target.value)} rows={3} placeholder="계란 2개, 양파 반 개, 밥 1공기" className="w-full rounded-2xl border p-4 text-base" /></label>
       <button disabled={!canGenerateRecipe} onClick={handleGenerateRecipe} className="w-full bg-[#e4e6e0] text-[#17191a] rounded-2xl p-4 font-bold disabled:opacity-40">{isLoading ? '레시피를 만들고 있습니다…' : 'AI 레시피 생성'}</button>
       {recipeResult?.error && <p role="alert" className="text-rose-600">{recipeResult.error} 다시 생성해주세요.</p>}
+      </>}
     </section>
   ) : activeTab === 'places' ? <SavedPlaces places={places} onSave={handleSaveRecipe} onDelete={handleDeleteSavedRecipe} /> : activeTab === 'youtube' ? <YoutubeRecipes recipes={videoRecipes} onSave={handleSaveRecipe} onDelete={handleDeleteSavedRecipe} /> : renderSavedSection();
 
@@ -346,7 +355,7 @@ const App = () => {
           {[['saved', '내 레시피', ClipboardList], ['recipe', '레시피 만들기', Sparkles], ['youtube', '유튜브 레시피', Youtube], ['places', '갈 곳', MapPin]].map(([tab, title, Icon]) => <button key={tab} aria-label={title} title={title} aria-current={activeTab === tab ? 'page' : undefined} onClick={() => setActiveTab(tab)} className="app-tab"><Icon size={23} strokeWidth={1.65} aria-hidden="true" /></button>)}
         </nav>
       </footer>
-      {currentOpenRecipe && <RecipeWorkspace key={`${kitchen.workspaceId}:${currentOpenRecipe.id || 'draft'}`} recipe={currentOpenRecipe} onClose={() => setOpenRecipe(null)} onSave={handleSaveRecipe} />}
+      {currentOpenRecipe && <RecipeWorkspace key={`${kitchen.workspaceId}:${currentOpenRecipe.id || 'draft'}`} recipe={currentOpenRecipe} startInPreview={openRecipePreview} onClose={() => setOpenRecipe(null)} onSave={handleSaveRecipe} />}
 
       {showSettings && <SettingsDialog user={user} kitchen={kitchen} onClose={() => setShowSettings(false)} onLogout={handleLogout} error={authError} />}
     </div>
